@@ -1,5 +1,7 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useUIStore } from './ui-store';
+import { Loading } from './components/Feedback';
 import { Protected } from './layout/Protected';
 import { PublicLayout } from './layout/PublicLayout';
 import { AuthPage } from './pages/AuthPage';
@@ -15,6 +17,16 @@ import { OverviewPage } from './pages/patient/OverviewPage';
 import { PrintRoutinePage } from './pages/patient/PrintRoutinePage';
 import { ReportPage } from './pages/patient/ReportPage';
 import { PatientFrame } from './pages/patient/PatientFrame';
+import { PlansPage } from './pages/billing/PlansPage';
+import { CheckoutSuccessPage } from './pages/billing/CheckoutSuccessPage';
+import { SubscriptionSettingsPage } from './pages/billing/SubscriptionSettingsPage';
+
+// O painel usa recharts: carregado só quando o admin abre a página.
+const AdminBillingPage = lazy(() =>
+  import('./pages/billing/AdminBillingPage').then((module) => ({
+    default: module.AdminBillingPage,
+  })),
+);
 
 function RouterContent() {
   const session = useUIStore((state) => state.session);
@@ -71,6 +83,19 @@ function RouterContent() {
         </Route>
         <Route path="/rotinas" element={<RoutinesPage />} />
         <Route path="/usuarios" element={<AdminOnly />} />
+        <Route path="/assinatura/planos" element={<PlansPage />} />
+        <Route path="/assinatura/sucesso" element={<CheckoutSuccessPage />} />
+        <Route path="/perfil/assinatura" element={<SubscriptionSettingsPage />} />
+        <Route
+          path="/admin/assinaturas"
+          element={
+            <AdminOnly>
+              <Suspense fallback={<Loading />}>
+                <AdminBillingPage />
+              </Suspense>
+            </AdminOnly>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to={session ? '/' : '/login'} replace />} />
     </Routes>

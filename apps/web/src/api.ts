@@ -1,3 +1,5 @@
+import type { PlanId, SubscriptionStatus } from '@mente-ativa/shared';
+
 const API_BASE =
   (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL ??
   'http://localhost:3000/api/v1';
@@ -21,6 +23,44 @@ export interface ApiError extends Error {
   code?: string;
   field?: string;
 }
+export type AccessReason =
+  | 'exempt'
+  | 'trial'
+  | 'active'
+  | 'grace_period'
+  | 'canceled_until_period_end'
+  | 'trial_expired'
+  | 'no_subscription'
+  | 'past_due'
+  | 'canceled'
+  | 'incomplete';
+export interface BillingPayment {
+  id: string;
+  amountCents: number;
+  currency: string;
+  plan: PlanId | null;
+  status: 'paid' | 'failed' | 'refunded';
+  paidAt: string | null;
+  createdAt: string | null;
+}
+export interface BillingMe {
+  hasAccess: boolean;
+  reason: AccessReason;
+  status: SubscriptionStatus | null;
+  plan: PlanId | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  canManage: boolean;
+  trialEndsAt: string | null;
+  trialDaysLeft: number;
+  payments: BillingPayment[];
+}
+
+let subscriptionRequiredListener: (() => void) | null = null;
+/** RN-PAY-05: chamado quando a API responde 402 SUBSCRIPTION_REQUIRED. */
+export function onSubscriptionRequired(listener: (() => void) | null) {
+  subscriptionRequiredListener = listener;
+}
 
 export async function api<T>(
   path: string,
@@ -42,6 +82,8 @@ export async function api<T>(
     error?: { message?: string; code?: string; field?: string };
   };
   if (!response.ok) {
+    if (response.status === 402 && payload.error?.code === 'SUBSCRIPTION_REQUIRED')
+      subscriptionRequiredListener?.();
     throw Object.assign(new Error(payload.error?.message ?? 'Ocorreu um erro inesperado.'), {
       status: response.status,
       code: payload.error?.code,

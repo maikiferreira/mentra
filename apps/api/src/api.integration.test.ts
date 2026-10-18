@@ -5,6 +5,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { PatientModel, UserModel, LeadModel } from './modules/shared/infra/models.js';
+import { initModels } from './modules/shared/infra/database.js';
 import { migrateEvaluations } from './modules/shared/infra/migrations.js';
 import { todayISO } from './modules/evaluations/domain/patient-evaluations.js';
 import { recentWeeks } from '@mente-ativa/shared';
@@ -91,7 +92,7 @@ async function addSeedPatients() {
 beforeAll(async () => {
   mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri());
-  await Promise.all([UserModel.init(), PatientModel.init(), LeadModel.init()]);
+  await initModels();
 });
 afterAll(async () => {
   await mongoose.disconnect();
@@ -135,9 +136,20 @@ describe('API REST v1 (integração MongoDB) ', () => {
       .send({ username: 'x', password: 'x' });
     expect(invalid.status).toBe(422);
     expect(invalid.body.error).toMatchObject({ message: 'Informe seu nome.', field: 'name' });
-    const created = await request(app)
+    const noEmail = await request(app)
       .post('/api/v1/auth/signup')
-      .send({ name: ' Nova ', username: ' NOVA ', password: 'abcd', passwordConfirmation: 'abcd' });
+      .send({ name: 'Nova', email: 'nova@', username: 'nova' });
+    expect(noEmail.body.error).toMatchObject({
+      message: 'Informe um e-mail válido.',
+      field: 'email',
+    });
+    const created = await request(app).post('/api/v1/auth/signup').send({
+      name: ' Nova ',
+      email: ' Nova@Exemplo.com ',
+      username: ' NOVA ',
+      password: 'abcd',
+      passwordConfirmation: 'abcd',
+    });
     expect(created.status).toBe(201);
     expect(created.body.user).toMatchObject({
       username: 'nova',
@@ -146,10 +158,15 @@ describe('API REST v1 (integração MongoDB) ', () => {
     });
     const persisted = await UserModel.findOne({ username: 'nova' }).select('+passwordHash').lean();
     expect(persisted?.passwordHash).not.toBe('abcd');
+    expect(persisted?.email).toBe('nova@exemplo.com');
     expect(await bcrypt.compare('abcd', persisted!.passwordHash)).toBe(true);
-    const duplicate = await request(app)
-      .post('/api/v1/auth/signup')
-      .send({ name: 'Novo', username: 'nova', password: 'abcd', passwordConfirmation: 'abcd' });
+    const duplicate = await request(app).post('/api/v1/auth/signup').send({
+      name: 'Novo',
+      email: 'novo@exemplo.com',
+      username: 'nova',
+      password: 'abcd',
+      passwordConfirmation: 'abcd',
+    });
     expect(duplicate.body.error.message).toBe('Este usuário já existe. Escolha outro.');
   });
 

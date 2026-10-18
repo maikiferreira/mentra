@@ -1,7 +1,6 @@
 import express from 'express';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
-import pino from 'pino';
 import pinoHttpImport from 'pino-http';
 import {
   MEEM_DOMAINS,
@@ -14,10 +13,30 @@ import { authRouter, adminRouter } from './modules/identity/presentation/routes.
 import { patientRouter, routineRouter } from './modules/patients/presentation/routes.js';
 import { dashboardRouter } from './modules/dashboard/presentation/routes.js';
 import { errorHandler } from './modules/shared/presentation/http.js';
+import { logger } from './modules/shared/infra/logger.js';
+import {
+  BillingService,
+  billingConfigFromEnv,
+  type BillingConfig,
+} from './modules/billing/application/billing-service.js';
+import { createEmailNotifier } from './modules/billing/application/emails.js';
+import {
+  createBillingGatewayFromEnv,
+  type BillingGateway,
+} from './modules/billing/infra/stripe-gateway.js';
+import {
+  createAdminBillingRouter,
+  createBillingRouter,
+  createWebhookHandler,
+} from './modules/billing/presentation/routes.js';
+import { BillingMetricsService } from './modules/billing/application/billing-metrics-service.js';
 
-const logger = pino({
-  level: process.env.NODE_ENV === 'test' ? 'silent' : (process.env.LOG_LEVEL ?? 'info'),
-});
+export interface AppOptions {
+  /** `null` desliga o Stripe (rotas de billing respondem 503); omitido, lê do ambiente. */
+  billingGateway?: BillingGateway | null;
+  billingConfig?: BillingConfig;
+}
+
 const pinoHttp = pinoHttpImport as unknown as (options: {
   logger: typeof logger;
 }) => express.RequestHandler;
@@ -31,7 +50,13 @@ const authRateLimit = rateLimit({
   },
 });
 
-export function createApp() {
+export function createApp(options: AppOptions = {}) {
+  const billingConfig = options.billingConfig ?? billingConfigFromEnv();
+  const billing = new BillingService(
+    options.billingGateway === undefined ? createBillingGatewayFromEnv() : options.billingGateway,
+    billingConfig,
+    createEmailNotifier(billingConfig.appUrl),
+  );
   const app = express();
   app.disable('x-powered-by');
   // Render (e outros PaaS) ficam atrás de um proxy reverso; necessário para o rate limit por IP.
@@ -55,6 +80,12 @@ export function createApp() {
     if (request.method === 'OPTIONS') return response.status(204).end();
     return next();
   });
+  // O webhook precisa do corpo bruto para validar a assinatura: fica antes do express.json.
+  app.post(
+    '/api/v1/billing/webhook',
+    express.raw({ type: 'application/json', limit: '1mb' }),
+    createWebhookHandler(billing),
+  );
   app.use(express.json({ limit: '1mb' }));
   app.get(['/health', '/api/v1/health'], (_request, response) =>
     response.status(200).json({ status: 'ok' }),
@@ -66,6 +97,8 @@ export function createApp() {
   api.use('/patients', patientRouter);
   api.use('/routines', routineRouter);
   api.use('/dashboard', dashboardRouter);
+  api.use('/billing', createBillingRouter(billing));
+  api.use('/admin/billing', createAdminBillingRouter(new BillingMetricsService()));
   api.use(adminRouter);
   api.get('/meta/options', (_request, response) =>
     response.json({

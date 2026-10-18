@@ -39,6 +39,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' | 'trial' }) {
           method: 'POST',
           body: jsonBody({
             name: values.name ?? '',
+            email: values.email ?? '',
             username: values.username ?? '',
             password: values.password ?? '',
             passwordConfirmation: values.confirmation ?? '',
@@ -167,6 +168,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' | 'trial' }) {
         </div>
         <form className="stack" style={{ gap: 14 }} onSubmit={handleSubmit}>
           {signup && input('name', 'Nome', 'text', 'name')}
+          {signup && input('email', 'E-mail', 'email', 'email', 'nome@exemplo.com')}
           {input('username', 'Usuário', 'text', 'username')}
           {input('password', 'Senha', 'password', signup ? 'new-password' : 'current-password')}
           {signup && input('confirmation', 'Confirmar senha', 'password', 'new-password')}

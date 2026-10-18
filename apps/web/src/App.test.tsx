@@ -608,6 +608,7 @@ describe('UI fase 5 — regras RN', () => {
     const actor = userEvent.setup();
     mount('/cadastro');
     await actor.type(screen.getByLabelText('Nome'), 'Profissional 1');
+    await actor.type(screen.getByLabelText('E-mail'), 'prof1@exemplo.com');
     await actor.type(screen.getByLabelText('Usuário'), 'prof1');
     await actor.type(screen.getByLabelText('Senha'), 'prof1');
     await actor.type(screen.getByLabelText('Confirmar senha'), 'prof1');
@@ -760,5 +761,157 @@ describe('UI fase 5 — regras RN', () => {
     expect(await screen.findByText('Na rotina')).toBeInTheDocument();
     expect(screen.getByText('Atividade original.')).toBeInTheDocument();
     expect(accepted).toBe(true);
+  });
+});
+
+const billingMe = (overrides: Record<string, unknown> = {}) => ({
+  hasAccess: true,
+  reason: 'trial',
+  status: null,
+  plan: null,
+  currentPeriodEnd: null,
+  cancelAtPeriodEnd: false,
+  canManage: false,
+  trialEndsAt: '2026-10-25T12:00:00.000Z',
+  trialDaysLeft: 3,
+  payments: [],
+  ...overrides,
+});
+
+describe('UI assinaturas — RN-PAY', () => {
+  it('RN-PAY-01: cards de planos mostram os preços e o aviso de teste encerrado', async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const route = new URL(String(input)).pathname.replace('/api/v1', '');
+      if (route === '/billing/me')
+        return response(billingMe({ hasAccess: false, reason: 'trial_expired', trialDaysLeft: 0 }));
+      return authFetch(String(input));
+    });
+    useUIStore.getState().setSession({ token: 'token', user });
+    mount('/assinatura/planos');
+    expect(await screen.findByText(/Seu período de teste terminou/)).toBeInTheDocument();
+    const monthly = screen.getByRole('article', { name: 'Mensal' });
+    const annual = screen.getByRole('article', { name: 'Anual' });
+    expect(within(monthly).getByText('R$ 49,90')).toBeInTheDocument();
+    expect(within(annual).getByText('R$ 44,91')).toBeInTheDocument();
+    expect(within(annual).getByText('R$ 538,92 cobrados anualmente')).toBeInTheDocument();
+    expect(within(annual).getByText('Economize 10%')).toBeInTheDocument();
+    expect(within(monthly).getByRole('button', { name: 'Escolher plano' })).toBeEnabled();
+  });
+
+  it('RN-PAY-05: resposta 402 da API redireciona para a escolha de plano', async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const route = new URL(String(input)).pathname.replace('/api/v1', '');
+      if (route === '/dashboard/summary')
+        return response(
+          { error: { code: 'SUBSCRIPTION_REQUIRED', message: 'Seu acesso não está ativo.' } },
+          402,
+        );
+      if (route === '/billing/me')
+        return response(
+          billingMe({ hasAccess: false, reason: 'no_subscription', trialDaysLeft: 0 }),
+        );
+      return authFetch(String(input));
+    });
+    useUIStore.getState().setSession({ token: 'token', user });
+    mount('/');
+    expect(await screen.findByRole('heading', { name: 'Planos' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Anual' })).toBeInTheDocument();
+  });
+
+  it('RN-PAY-07: tela de assinatura mostra status, próxima cobrança e histórico', async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const route = new URL(String(input)).pathname.replace('/api/v1', '');
+      if (route === '/billing/me')
+        return response(
+          billingMe({
+            reason: 'active',
+            status: 'active',
+            plan: 'monthly',
+            currentPeriodEnd: '2026-11-18T12:00:00.000Z',
+            canManage: true,
+            trialEndsAt: null,
+            trialDaysLeft: 0,
+            payments: [
+              {
+                id: 'in_2',
+                amountCents: 4990,
+                currency: 'brl',
+                plan: 'monthly',
+                status: 'failed',
+                paidAt: null,
+                createdAt: '2026-10-20T12:00:00.000Z',
+              },
+              {
+                id: 'in_1',
+                amountCents: 4990,
+                currency: 'brl',
+                plan: 'monthly',
+                status: 'paid',
+                paidAt: '2026-10-18T12:00:00.000Z',
+                createdAt: '2026-10-18T12:00:00.000Z',
+              },
+            ],
+          }),
+        );
+      return authFetch(String(input));
+    });
+    useUIStore.getState().setSession({ token: 'token', user });
+    mount('/perfil/assinatura');
+    expect(await screen.findByText('Ativa')).toBeInTheDocument();
+    expect(screen.getByText('Próxima cobrança')).toBeInTheDocument();
+    expect(screen.getByText('18/11/2026')).toBeInTheDocument();
+    expect(screen.getByText('R$ 49,90/mês')).toBeInTheDocument();
+    const rows = within(screen.getByRole('table')).getAllByRole('row');
+    expect(rows).toHaveLength(3);
+    expect(within(rows[1]!).getByText('Falhou')).toBeInTheDocument();
+    expect(within(rows[2]!).getByText('18/10/2026')).toBeInTheDocument();
+    expect(within(rows[2]!).getByText('Pago')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Atualizar forma de pagamento' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Cancelar assinatura' })).toBeEnabled();
+    expect(screen.getByRole('link', { name: /Assinatura/ })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
+  it('RN-PAY-10: página de sucesso só confirma quando a API mostra a assinatura ativa', async () => {
+    let calls = 0;
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const route = new URL(String(input)).pathname.replace('/api/v1', '');
+      if (route === '/billing/me') {
+        calls += 1;
+        return response(
+          calls === 1
+            ? billingMe({ hasAccess: false, reason: 'incomplete', status: 'incomplete' })
+            : billingMe({ reason: 'active', status: 'active', plan: 'annual' }),
+        );
+      }
+      return authFetch(String(input));
+    });
+    useUIStore.getState().setSession({ token: 'token', user });
+    mount('/assinatura/sucesso?session_id=cs_1');
+    expect(
+      await screen.findByRole('heading', { name: 'Confirmando pagamento…' }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Acesso liberado!' }, { timeout: 4_000 }),
+    ).toBeInTheDocument();
+    expect(calls).toBeGreaterThanOrEqual(2);
+  });
+
+  it('RN-PAY-03: banner do teste grátis mostra os dias restantes', async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const route = new URL(String(input)).pathname.replace('/api/v1', '');
+      if (route === '/billing/me') return response(billingMe());
+      return authFetch(String(input));
+    });
+    useUIStore.getState().setSession({ token: 'token', user });
+    mount('/');
+    const banner = await screen.findByText(/Seu teste grátis termina em/);
+    expect(banner).toHaveTextContent('Seu teste grátis termina em 3 dias');
+    expect(screen.getByRole('link', { name: 'Assinar agora' })).toHaveAttribute(
+      'href',
+      '/assinatura/planos',
+    );
   });
 });

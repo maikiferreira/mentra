@@ -1,7 +1,13 @@
 import { Router } from 'express';
 import { AuthService } from '../application/auth-service.js';
 import { AdminQueryService } from '../application/admin-query-service.js';
-import { getRequestUser, requireAdmin, requireAuth } from '../../shared/presentation/http.js';
+import {
+  getRequestAccess,
+  getRequestUser,
+  requireAdmin,
+  requireAuth,
+  requireAuthAllowUnpaid,
+} from '../../shared/presentation/http.js';
 import { resetDemoDatabase } from '../application/demo-reset-service.js';
 
 const auth = new AuthService();
@@ -16,8 +22,8 @@ authRouter.post('/signup', async (request, response) =>
 authRouter.post('/trial-access', async (request, response) =>
   response.status(201).json(await auth.trialAccess(request.body)),
 );
-authRouter.get('/me', requireAuth, async (request, response) =>
-  response.json(await auth.me(getRequestUser(request).username)),
+authRouter.get('/me', requireAuthAllowUnpaid, async (request, response) =>
+  response.json(await auth.me(getRequestUser(request).username, getRequestAccess(request))),
 );
 
 export const adminRouter = Router();

@@ -4,20 +4,26 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useUIStore } from '../ui-store';
 import { Brand } from '../components/Brand';
 import { WelcomeModal } from './WelcomeModal';
+import { TrialBanner } from '../pages/billing/TrialBanner';
 
 export function AppShell({ children }: { children: ReactNode }) {
   const session = useUIStore((state) => state.session)!;
   const logout = useUIStore((state) => state.logout);
   const queryClient = useQueryClient();
   const location = useLocation();
+  const path = location.pathname;
   const active =
-    location.pathname === '/'
+    path === '/'
       ? 'home'
-      : location.pathname.startsWith('/pacientes')
+      : path.startsWith('/pacientes')
         ? 'list'
-        : location.pathname.startsWith('/rotinas')
+        : path.startsWith('/rotinas')
           ? 'routine'
-          : 'users';
+          : path.startsWith('/admin/assinaturas')
+            ? 'subscriptions'
+            : path.startsWith('/perfil/assinatura') || path.startsWith('/assinatura')
+              ? 'billing'
+              : 'users';
   const icon = {
     home: (
       <svg viewBox="0 0 24 24">
@@ -44,21 +50,36 @@ export function AppShell({ children }: { children: ReactNode }) {
         <path d="M5 20c.8-4 3.6-6 7-6s6.2 2 7 6" />
       </svg>
     ),
+    billing: (
+      <svg viewBox="0 0 24 24">
+        <rect x="2.5" y="5" width="19" height="14" rx="2" />
+        <path d="M2.5 10h19M6.5 15h4" />
+      </svg>
+    ),
+    subscriptions: (
+      <svg viewBox="0 0 24 24">
+        <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+      </svg>
+    ),
   };
   const nav = [
     ['home', 'Início', '/'],
     ['list', 'Pacientes', '/pacientes'],
     ['routine', 'Rotinas', '/rotinas'],
   ] as const;
+  const extraNav =
+    session.user.role === 'admin'
+      ? ([
+          ['users', 'Usuários', '/usuarios'],
+          ['subscriptions', 'Assinaturas', '/admin/assinaturas'],
+        ] as const)
+      : ([['billing', 'Assinatura', '/perfil/assinatura']] as const);
   return (
     <div className="shell">
       <aside className="side">
         <Brand />
         <nav aria-label="Menu principal">
-          {[
-            ...nav,
-            ...(session.user.role === 'admin' ? [['users', 'Usuários', '/usuarios'] as const] : []),
-          ].map(([key, label, to]) => (
+          {[...nav, ...extraNav].map(([key, label, to]) => (
             <Link
               className="navb"
               key={key}
@@ -90,6 +111,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <div className="content">
+        {session.user.role !== 'admin' && <TrialBanner />}
         <main>{children}</main>
         <p className="principle">
           <b>A tecnologia sugere. O profissional decide.</b> As sugestões não são diagnóstico nem

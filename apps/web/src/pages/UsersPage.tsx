@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { LeadsDto, UsersDto } from '@mente-ativa/shared';
@@ -95,7 +96,12 @@ function UsersPage() {
   );
 }
 
-export function AdminOnly() {
+/** Sem children, mostra a tela de usuários. */
+export function AdminOnly({ children }: { children?: ReactNode }) {
   const session = useUIStore((state) => state.session)!;
-  return session.user.role === 'admin' ? <UsersPage /> : <Navigate to="/" replace />;
+  return session.user.role === 'admin' ? (
+    <>{children ?? <UsersPage />}</>
+  ) : (
+    <Navigate to="/" replace />
+  );
 }
