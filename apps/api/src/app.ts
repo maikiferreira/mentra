@@ -9,7 +9,7 @@ import {
   LIMITATIONS,
   EMERGENCY_RELATIONSHIPS,
   TRIAL_PROFILES,
-} from '@mentra/shared';
+} from '@mente-ativa/shared';
 import { authRouter, adminRouter } from './modules/identity/presentation/routes.js';
 import { patientRouter, routineRouter } from './modules/patients/presentation/routes.js';
 import { dashboardRouter } from './modules/dashboard/presentation/routes.js';

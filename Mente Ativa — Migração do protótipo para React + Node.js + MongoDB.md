@@ -1,7 +1,7 @@
-# Mentra — Migração do protótipo para React + Node.js + MongoDB
+# Mente Ativa — Migração do protótipo para React + Node.js + MongoDB
 
 > Documento de entrada para o Claude Code (VS Code).
-> O protótipo atual é **um único arquivo HTML** (`mentra-prototipo.html`) com dados mocados em memória.
+> O protótipo atual é **um único arquivo HTML** (`mente-ativa-prototipo.html`) com dados mocados em memória.
 > Objetivo: transformar em uma aplicação real (React + API Node/DDD/SOLID + MongoDB) **sem mudar nada do que o cliente vê e faz**.
 
 ---
@@ -11,8 +11,8 @@
 **Prompt inicial sugerido para o Claude Code:**
 
 ```
-Leia MENTRA_MIGRACAO_REACT_NODE_MONGO.md inteiro e o arquivo de referência
-docs/prototipo/mentra-prototipo.html (é a fonte da verdade do comportamento e do visual).
+Leia MENTE_ATIVA_MIGRACAO_REACT_NODE_MONGO.md inteiro e o arquivo de referência
+docs/prototipo/mente-ativa-prototipo.html (é a fonte da verdade do comportamento e do visual).
 Trabalhe em fases (seção 12). Em cada fase: implemente, escreva testes, rode-os e só então avance.
 Mantenha docs/business-rules.md atualizado conforme implementa (seção 11).
 Regra de ouro: o cliente NÃO pode perceber diferença de comportamento nem de visual em relação ao protótipo.
@@ -22,7 +22,7 @@ Regra de ouro: o cliente NÃO pode perceber diferença de comportamento nem de v
 
 | Arquivo | Destino | Função |
 |---|---|---|
-| `mentra-prototipo.html` | `docs/prototipo/mentra-prototipo.html` | Referência executável. Abra no navegador para comparar lado a lado. Contém **todo o CSS** (copiar para o React), textos exatos e a lógica original. |
+| `mente-ativa-prototipo.html` | `docs/prototipo/mente-ativa-prototipo.html` | Referência executável. Abra no navegador para comparar lado a lado. Contém **todo o CSS** (copiar para o React), textos exatos e a lógica original. |
 | `logo.jpg` (160×160) | `apps/web/src/assets/logo.jpg` | Logo exibida no menu lateral e no login (no HTML está embutida em base64). |
 | este `.md` | raiz | Especificação. |
 
@@ -36,7 +36,7 @@ Regra de ouro: o cliente NÃO pode perceber diferença de comportamento nem de v
 
 ## 1. Visão do produto
 
-**Mentra**: plataforma para profissionais que estimulam a mente de idosos acompanharem a evolução cognitiva de cada paciente (a partir das fichas de avaliação) e planejarem a rotina de atividades, com sugestões de IA. Princípio exibido no rodapé de todas as telas:
+**Mente Ativa**: plataforma para profissionais que estimulam a mente de idosos acompanharem a evolução cognitiva de cada paciente (a partir das fichas de avaliação) e planejarem a rotina de atividades, com sugestões de IA. Princípio exibido no rodapé de todas as telas:
 
 > **A tecnologia sugere. O profissional decide.** As sugestões não são diagnóstico nem prescrição.
 
@@ -54,14 +54,14 @@ Restrições de conformidade (refletidas nos textos): LGPD (pacientes identifica
 - **Monorepo** (npm workspaces/pnpm):
 
 ```
-mentra/
+mente-ativa/
 ├─ apps/
 │  ├─ web/                      # React
 │  └─ api/                      # Node (DDD)
 ├─ packages/
 │  └─ shared/                   # tipos/DTOs/constantes compartilhados (domínios MEEM, enums, textos)
 ├─ docs/
-│  ├─ prototipo/mentra-prototipo.html
+│  ├─ prototipo/mente-ativa-prototipo.html
 │  └─ business-rules.md         # mantido durante o desenvolvimento (seção 11)
 └─ docker-compose.yml           # mongo + api + web
 ```
@@ -118,7 +118,7 @@ O protótipo não tem URLs (tudo é estado). Mapeamento para rotas reais, **mant
 |---|---|---|---|
 | `!S.user` (modo login) | `/login` | público | Entrar |
 | `!S.user` (modo signup) | `/cadastro` | público | Criar conta |
-| `!S.user` (modo lead) | `/quero-testar` | público | Quero testar o Mentra |
+| `!S.user` (modo lead) | `/quero-testar` | público | Quero testar o Mente Ativa |
 | `view='home'` | `/` | autenticado | Início |
 | `view='list'` | `/pacientes` | autenticado | Pacientes |
 | `view='form'` (novo) | `/pacientes/novo` | autenticado | Novo paciente |
@@ -141,7 +141,7 @@ Regras de navegação equivalentes ao protótipo:
 
 ## 4. Layout global (idêntico ao protótipo)
 
-- **Sidebar esquerda (≥ 821px)**, 240px, sticky, altura 100vh, borda direita: logo (40×40, raio 10) + "Mentra", `nav` (Início, Pacientes, Rotinas, [Usuários só admin]), e no rodapé: bloco do usuário (nome em negrito; "Administrador" ou "Profissional" + " · " + usuário) e botão **Sair**; acima do rodapé, selo "Protótipo · dados fictícios" (controlar por `VITE_SHOW_DEMO_FLAG=true`, ligado por padrão).
+- **Sidebar esquerda (≥ 821px)**, 240px, sticky, altura 100vh, borda direita: logo (40×40, raio 10) + "Mente Ativa", `nav` (Início, Pacientes, Rotinas, [Usuários só admin]), e no rodapé: bloco do usuário (nome em negrito; "Administrador" ou "Profissional" + " · " + usuário) e botão **Sair**; acima do rodapé, selo "Protótipo · dados fictícios" (controlar por `VITE_SHOW_DEMO_FLAG=true`, ligado por padrão).
 - **Mobile (≤ 820px):** sidebar vira cabeçalho no topo; o `nav` fica horizontal com rolagem; bloco do usuário em linha; selo oculto.
 - Item **Pacientes** mostra um contador (chip `warn`) = nº de pacientes visíveis com ficha pendente (só se > 0).
 - Conteúdo: `main` + rodapé com o princípio (seção 1).
@@ -384,14 +384,14 @@ Cartão central (`.auth .panel`): logo+nome, título, subtítulo, formulário, l
 - Botão **Entrar** (submit; Enter também envia) → `POST /auth/login`.
 - Erro: nota `warn` com `role="alert"` (mensagens RN-AUTH-02).
 - Link "Ainda não tem conta? **Criar conta**" (`authmode:signup`).
-- Caixa tracejada (`.cta`): "**Quer testar o Mentra?**" / "Deixe seu contato e avisamos quando houver vaga." / botão **Quero testar** (`authmode:lead`).
+- Caixa tracejada (`.cta`): "**Quer testar o Mente Ativa?**" / "Deixe seu contato e avisamos quando houver vaga." / botão **Quero testar** (`authmode:lead`).
 - Nota: "Acesso de demonstração: usuário **admin**, senha **admin**." (manter; controlar por `VITE_SHOW_DEMO_HINT=true`).
 
 **Criar conta** — título "Criar conta", subtítulo "Cadastre-se para acompanhar seus pacientes."
 - Campos: Nome, Usuário, Senha, Confirmar senha. Botão **Criar conta** → `POST /auth/signup`. Link "Já tem conta? **Entrar**".
 
-**Quero testar** — título "Quero testar o Mentra"; subtítulo "Acompanhe a evolução cognitiva dos seus pacientes e planeje a rotina de atividades. Deixe seu contato e liberamos um acesso de teste na hora, sem pacientes cadastrados."
-- Campos: Nome; Telefone (WhatsApp) `tel` placeholder `(32) 90000-0000`; E-mail `email` placeholder `nome@exemplo.com`; Como você atua? (select); Onde você atua (opcional) placeholder `Ex.: clínica, ILPI, centro-dia`; checkbox "Autorizo o contato sobre o teste do Mentra. Uso estes dados só para isso."
+**Quero testar** — título "Quero testar o Mente Ativa"; subtítulo "Acompanhe a evolução cognitiva dos seus pacientes e planeje a rotina de atividades. Deixe seu contato e liberamos um acesso de teste na hora, sem pacientes cadastrados."
+- Campos: Nome; Telefone (WhatsApp) `tel` placeholder `(32) 90000-0000`; E-mail `email` placeholder `nome@exemplo.com`; Como você atua? (select); Onde você atua (opcional) placeholder `Ex.: clínica, ILPI, centro-dia`; checkbox "Autorizo o contato sobre o teste do Mente Ativa. Uso estes dados só para isso."
 - Texto pequeno: "Seu acesso: usuário = seu primeiro nome. Senha = os 4 últimos dígitos do telefone."
 - Botão **Quero testar** → `POST /auth/trial-access` (estado "Enviando…" desabilitado durante a chamada). Link "Voltar ao login".
 - Sucesso → autentica, vai para `/` e abre o **pop-up** (8.1).
@@ -500,7 +500,7 @@ Pós-ação: novo → abre o paciente na aba **Fichas**; editar → aba **Dados 
 Modal centralizado sobre a Home (fundo `rgba(0,0,0,.55)`, cartão 440px máx., raio 16, foco automático no botão):
 
 - Título: **Bem-vindo(a), {primeiro nome}!**
-- "Seu acesso de teste ao Mentra está liberado. Anote seus dados para entrar nas próximas vezes:"
+- "Seu acesso de teste ao Mente Ativa está liberado. Anote seus dados para entrar nas próximas vezes:"
 - Bloco destacado (`accent-soft`): **Usuário** `{usuário}` · **Senha** `{4 dígitos}`
 - "Você começa sem nenhum paciente cadastrado. Use "Novo paciente" para criar o primeiro."
 - Botão **Entendi** (`closewelcome`). Fecha também com **Esc**. Some ao fazer logout.
@@ -845,7 +845,7 @@ Tipos de `todo.kind`: `pending` (tag "Ficha nova", `warn`, botão "Conferir fich
 
 ## 10. MongoDB — modelo e índices
 
-Coleções (`mentra`):
+Coleções (`mente-ativa`):
 
 **`users`**
 ```json
@@ -913,7 +913,7 @@ Mapa rápido RN → onde viver na arquitetura:
 3. **API:** repositórios Mongo, casos de uso, rotas, Zod, JWT, `PatientAccessPolicy`, tratamento de erros com as mensagens do protótipo. Testes de integração (Supertest + `mongodb-memory-server`) por endpoint (seção 9).
 4. **Seed + `/demo/reset`.**
 5. **Front:** layout global, rotas protegidas, telas na ordem: Auth → Pacientes/Form → Paciente (Fichas com revisão → Evolução/Sugestões → Dados) → Início → Rotinas → Usuários → pop-up. TanStack Query para dados; Zustand para estado de UI (7.8). Reproduzir temporizações (1,1 s e 3×650 ms).
-6. **Paridade:** abrir `mentra-prototipo.html` e o app lado a lado; percorrer o **roteiro de aceitação** abaixo; corrigir diferenças visuais/textuais. E2E (Playwright) cobrindo o roteiro.
+6. **Paridade:** abrir `mente-ativa-prototipo.html` e o app lado a lado; percorrer o **roteiro de aceitação** abaixo; corrigir diferenças visuais/textuais. E2E (Playwright) cobrindo o roteiro.
 7. **Hardening mínimo:** rate limit em `/auth/*`, CORS, helmet, logs, variáveis de ambiente.
 
 ### Roteiro de aceitação (E2E) — deve passar igual ao protótipo

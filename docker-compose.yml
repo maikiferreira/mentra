@@ -5,7 +5,7 @@ services:
     ports:
       - '27017:27017'
     volumes:
-      - mentra-mongo-data:/data/db
+      - mente-ativa-mongo-data:/data/db
     healthcheck:
       test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.runCommand({ ping: 1 }).ok']
       interval: 5s
@@ -19,7 +19,7 @@ services:
     restart: unless-stopped
     environment:
       API_PORT: 3000
-      MONGO_URI: mongodb://mongo:27017/mentra
+      MONGO_URI: mongodb://mongo:27017/mente-ativa
       JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-me}
       WEB_ORIGINS: ${WEB_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
     ports:
@@ -29,7 +29,7 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
-      - mentra-node-modules:/app/node_modules
+      - mente-ativa-node-modules:/app/node_modules
 
   web:
     build:
@@ -46,8 +46,8 @@ services:
       - api
     volumes:
       - .:/app
-      - mentra-node-modules:/app/node_modules
+      - mente-ativa-node-modules:/app/node_modules
 
 volumes:
-  mentra-mongo-data:
-  mentra-node-modules:
+  mente-ativa-mongo-data:
+  mente-ativa-node-modules:

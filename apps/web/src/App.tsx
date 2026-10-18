@@ -19,7 +19,7 @@ import {
   TRIAL_PROFILES,
   totalScore,
   type MeemScores,
-} from '@mentra/shared';
+} from '@mente-ativa/shared';
 import logo from './assets/logo.jpg';
 import {
   api,
@@ -69,7 +69,7 @@ function Brand() {
   return (
     <div className="brand">
       <img className="logo" src={logo} alt="" width="40" height="40" />
-      <span className="bn">Mentra</span>
+      <span className="bn">Mente Ativa</span>
     </div>
   );
 }
@@ -105,8 +105,8 @@ function WelcomeModal() {
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
         <h2 id="welcome-title">Bem-vindo(a), {welcome.name.trim().split(/\s+/)[0]}!</h2>
         <p>
-          Seu acesso de teste ao Mentra está liberado. Anote seus dados para entrar nas próximas
-          vezes:
+          Seu acesso de teste ao Mente Ativa está liberado. Anote seus dados para entrar nas
+          próximas vezes:
         </p>
         <dl className="cred">
           <dt>Usuário</dt>
@@ -344,7 +344,7 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' | 'trial' }) {
         <div className="panel">
           {brand}
           <div>
-            <h1>Quero testar o Mentra</h1>
+            <h1>Quero testar o Mente Ativa</h1>
             <p className="muted">
               Acompanhe a evolução cognitiva dos seus pacientes e planeje a rotina de atividades.
               Deixe seu contato e liberamos um acesso de teste na hora, sem pacientes cadastrados.
@@ -380,7 +380,9 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' | 'trial' }) {
                 checked={values.consent === true}
                 onChange={(event) => change('consent', event.target.checked)}
               />
-              <span>Autorizo o contato sobre o teste do Mentra. Uso estes dados só para isso.</span>
+              <span>
+                Autorizo o contato sobre o teste do Mente Ativa. Uso estes dados só para isso.
+              </span>
             </label>
             {error && (
               <div className="note warn" role="alert">
@@ -438,7 +440,7 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' | 'trial' }) {
         {!signup && (
           <>
             <div className="cta">
-              <b>Quer testar o Mentra?</b>
+              <b>Quer testar o Mente Ativa?</b>
               <p className="muted">Deixe seu contato e avisamos quando houver vaga.</p>
               <Link className="btn" to="/quero-testar">
                 Quero testar

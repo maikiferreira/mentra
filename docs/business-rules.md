@@ -1,4 +1,4 @@
-# Regras de negócio Mentra
+# Regras de negócio Mente Ativa
 
 Status atualizado após as fases 1–7. Os testes de API usam MongoDB em memória; UI usa Testing Library/jsdom; os roteiros principais usam Playwright com Chrome instalado localmente. A cobertura exercita os principais fluxos, mas não substitui comparação pixel a pixel em todos os estados/tamanhos.
 
@@ -44,7 +44,7 @@ Status atualizado após as fases 1–7. Os testes de API usam MongoDB em memóri
 
 ## Decisões e limites desta fase
 
-- `npm run seed --workspace @mentra/api` insere usuários/pacientes de exemplo somente quando ausentes e preserva registros existentes; `POST /api/v1/demo/reset` (admin) apaga dados e restaura as sementes.
+- `npm run seed --workspace @mente-ativa/api` insere usuários/pacientes de exemplo somente quando ausentes e preserva registros existentes; `POST /api/v1/demo/reset` (admin) apaga dados e restaura as sementes.
 - Notas de avaliação não são expostas nos DTOs de fichas.
 - As rotas/telas React consomem a API; Playwright cobre login/Home, pacientes, upload/revisão/confirm, sugestões/rotina, trial e seus credenciais, autorização admin, mobile e tema.
 - CORS usa `WEB_ORIGINS`; localmente permite localhost:5173 e 127.0.0.1:5173. Em produção deve-se configurar apenas os domínios da aplicação.

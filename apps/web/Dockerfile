@@ -7,4 +7,4 @@ COPY packages/shared/package.json packages/shared/package.json
 RUN npm ci
 COPY . .
 EXPOSE 5173
-CMD ["npm", "run", "dev", "--workspace", "@mentra/web", "--", "--host", "0.0.0.0"]
+CMD ["npm", "run", "dev", "--workspace", "@mente-ativa/web", "--", "--host", "0.0.0.0"]

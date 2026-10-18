@@ -158,7 +158,7 @@ describe('UI fase 5 — regras RN', () => {
     ).toBeInTheDocument();
     await actor.click(screen.getByRole('button', { name: 'Sair' }));
     expect(await screen.findByRole('heading', { name: 'Entrar' })).toBeInTheDocument();
-    expect(localStorage.getItem('mentra-session')).toBeNull();
+    expect(localStorage.getItem('mente-ativa-session')).toBeNull();
   });
 
   it('RN-LEAD-05: acesso de teste autentica e mostra credenciais no pop-up, fechável por Escape', async () => {
@@ -277,7 +277,7 @@ describe('UI fase 5 — regras RN', () => {
     expect(
       await screen.findByRole('heading', { name: /Bom dia|Boa tarde|Boa noite/ }),
     ).toBeInTheDocument();
-    expect(localStorage.getItem('mentra-session')).toContain('signup-token');
+    expect(localStorage.getItem('mente-ativa-session')).toContain('signup-token');
   });
 
   it('RN-PAT-02..06/RN-PAT-08: cria paciente com valores padrão, privacidade e responsável somente leitura', async () => {

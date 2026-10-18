@@ -1,4 +1,4 @@
-import type { MeemScores } from '@mentra/shared';
+import type { MeemScores } from '@mente-ativa/shared';
 
 export const SEED_USERS = [
   { username: 'admin', name: 'Administrador', role: 'admin' as const, password: 'admin' },

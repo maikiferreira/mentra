@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { TRIAL_PROFILES, firstNameUsername, uniqueUsername } from '@mentra/shared';
+import { TRIAL_PROFILES, firstNameUsername, uniqueUsername } from '@mente-ativa/shared';
 import { z } from 'zod';
 import { ApiError, conflict, validationError } from '../../shared/kernel/errors.js';
 import { LeadModel, UserModel } from '../../shared/infra/models.js';

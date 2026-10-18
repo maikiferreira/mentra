@@ -3,7 +3,7 @@ import type { AuthUser } from './api';
 
 const savedSession = (() => {
   try {
-    return JSON.parse(localStorage.getItem('mentra-session') ?? 'null') as {
+    return JSON.parse(localStorage.getItem('mente-ativa-session') ?? 'null') as {
       token: string;
       user: AuthUser;
     } | null;
@@ -32,11 +32,11 @@ export const useUIStore = create<UIState>((set) => ({
   welcome: null,
   justConfirmed: {},
   setSession: (session) => {
-    localStorage.setItem('mentra-session', JSON.stringify(session));
+    localStorage.setItem('mente-ativa-session', JSON.stringify(session));
     set({ session });
   },
   logout: () => {
-    localStorage.removeItem('mentra-session');
+    localStorage.removeItem('mente-ativa-session');
     set({ session: null, welcome: null, justConfirmed: {} });
   },
   setWelcome: (welcome) => set({ welcome }),

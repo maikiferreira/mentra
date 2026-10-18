@@ -1,5 +1,5 @@
 import mongoose, { Schema, type InferSchemaType } from 'mongoose';
-import type { MeemScores, MeemDomainKey } from '@mentra/shared';
+import type { MeemScores, MeemDomainKey } from '@mente-ativa/shared';
 
 const userSchema = new Schema(
   {

@@ -6,7 +6,7 @@ import {
   type MeemScores,
   type PatientForPlanning,
   type PendingFicha,
-} from '@mentra/shared';
+} from '@mente-ativa/shared';
 import { z } from 'zod';
 import { conflict, notFound, validationError } from '../../shared/kernel/errors.js';
 import { PatientModel } from '../../shared/infra/models.js';

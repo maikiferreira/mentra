@@ -1,4 +1,4 @@
-import { calculateDomainFlags, generateSuggestions, type MeemScores } from '@mentra/shared';
+import { calculateDomainFlags, generateSuggestions, type MeemScores } from '@mente-ativa/shared';
 import { PatientModel, UserModel } from '../../shared/infra/models.js';
 import type { AuthUser } from '../../shared/presentation/http.js';
 

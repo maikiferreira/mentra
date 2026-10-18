@@ -6,7 +6,7 @@ import {
   nextPatientCode,
   totalScore,
   type MeemScores,
-} from '@mentra/shared';
+} from '@mente-ativa/shared';
 import { z } from 'zod';
 import { notFound, validationError } from '../../shared/kernel/errors.js';
 import { PatientModel, UserModel } from '../../shared/infra/models.js';

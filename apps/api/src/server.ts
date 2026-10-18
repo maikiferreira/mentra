@@ -8,7 +8,7 @@ const app = createApp();
 try {
   await connectDatabase();
   const server = app.listen(port, '0.0.0.0', () => {
-    console.log(`Mentra API listening on port ${port}`);
+    console.log(`Mente Ativa API listening on port ${port}`);
   });
   const shutdown = () =>
     server.close(() => {
