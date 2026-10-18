@@ -1,0 +1,45 @@
+# Produção: docker compose -f docker-compose.prod.yml up -d --build
+# Defina JWT_SECRET (texto longo e aleatório) no ambiente ou num arquivo .env.
+services:
+  mongo:
+    image: mongo:7.0
+    restart: unless-stopped
+    volumes:
+      - mente-ativa-mongo-data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.runCommand({ ping: 1 }).ok']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: prod
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_PORT: 3000
+      # A API recebe as requisições pelo nginx do serviço web.
+      TRUST_PROXY: 1
+      MONGO_URI: mongodb://mongo:27017/mente-ativa
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET com um texto longo e aleatório}
+      WEB_ORIGINS: ${WEB_ORIGINS:-http://localhost:8080}
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: prod
+    restart: unless-stopped
+    ports:
+      - '${WEB_PORT:-8080}:80'
+    depends_on:
+      - api
+
+volumes:
+  mente-ativa-mongo-data:
