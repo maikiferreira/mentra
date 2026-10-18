@@ -591,6 +591,23 @@ describe('UI fase 5 — regras RN', () => {
     expect(screen.getByRole('button', { name: 'Imprimir ou salvar em PDF' })).toBeInTheDocument();
   });
 
+  it('login permite mostrar e ocultar a senha digitada', async () => {
+    const actor = userEvent.setup();
+    mount('/login');
+    const password = screen.getByLabelText('Senha');
+    await actor.type(password, 'segredo');
+    expect(password).toHaveAttribute('type', 'password');
+    await actor.click(screen.getByRole('button', { name: 'Mostrar senha' }));
+    expect(password).toHaveAttribute('type', 'text');
+    expect(password).toHaveValue('segredo');
+    expect(screen.getByRole('button', { name: 'Ocultar senha' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await actor.click(screen.getByRole('button', { name: 'Ocultar senha' }));
+    expect(password).toHaveAttribute('type', 'password');
+  });
+
   it('RN-AUTH-03: cadastro profissional autentica e redireciona para Início', async () => {
     vi.mocked(fetch).mockImplementation(async (input) => {
       const route = new URL(String(input)).pathname.replace('/api/v1', '');

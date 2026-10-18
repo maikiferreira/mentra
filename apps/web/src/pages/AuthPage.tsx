@@ -16,6 +16,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' | 'trial' }) {
   });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   if (session) return <Navigate to="/" replace />;
@@ -74,19 +75,37 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' | 'trial' }) {
     type = 'text',
     autocomplete = key,
     placeholder?: string,
-  ) => (
-    <label htmlFor={`auth-${key}`} key={key}>
-      {label}
-      <input
-        id={`auth-${key}`}
-        type={type}
-        autoComplete={autocomplete}
-        placeholder={placeholder}
-        value={String(values[key] ?? '')}
-        onChange={(event) => change(key, event.target.value)}
-      />
-    </label>
-  );
+  ) => {
+    const field = (
+      <label htmlFor={`auth-${key}`} key={key}>
+        {label}
+        <input
+          id={`auth-${key}`}
+          type={type === 'password' && showPassword ? 'text' : type}
+          autoComplete={autocomplete}
+          placeholder={placeholder}
+          value={String(values[key] ?? '')}
+          onChange={(event) => change(key, event.target.value)}
+        />
+      </label>
+    );
+    if (type !== 'password') return field;
+    // O botão fica fora do <label> para o nome do campo continuar sendo só "Senha".
+    return (
+      <div className="pwfield" key={key}>
+        {field}
+        <button
+          type="button"
+          className="pwtoggle"
+          aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+          aria-pressed={showPassword}
+          onClick={() => setShowPassword((current) => !current)}
+        >
+          {showPassword ? 'Ocultar' : 'Mostrar'}
+        </button>
+      </div>
+    );
+  };
   if (mode === 'trial')
     return (
       <div className="auth">
@@ -191,7 +210,6 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' | 'trial' }) {
           <>
             <div className="cta">
               <b>Quer testar o Mente Ativa?</b>
-              <p className="muted">Deixe seu contato e avisamos quando houver vaga.</p>
               <Link className="btn" to="/quero-testar">
                 Quero testar
               </Link>

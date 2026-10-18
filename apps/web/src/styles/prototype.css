@@ -409,6 +409,29 @@ button {
   border-radius: 8px;
   padding: 10px 12px;
 }
+.pwfield {
+  position: relative;
+}
+.pwfield input {
+  padding-right: 88px;
+}
+.pwtoggle {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pwtoggle:hover {
+  background: var(--accent-soft);
+}
 .auth .brand {
   font-size: 1.6rem;
 }

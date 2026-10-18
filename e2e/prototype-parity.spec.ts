@@ -22,7 +22,7 @@ test('RN-AUTH-01/RN-PAT-01/RN-FIC-01..05/RN-EVO-03..07: demo principal mantém f
 }) => {
   await page.goto('/login');
   await page.getByLabel('Usuário').fill('admin');
-  await page.getByLabel('Senha').fill('admin');
+  await page.getByLabel('Senha', { exact: true }).fill('admin');
   await page.getByRole('button', { name: 'Entrar' }).click();
 
   await expect(page.getByRole('heading', { name: /Administrador/ })).toBeVisible();
@@ -97,12 +97,12 @@ test('RN-LEAD-01..06: cria acesso de teste, mostra pop-up e registra lead para a
 
   await page.getByRole('button', { name: 'Sair' }).click();
   await page.getByLabel('Usuário').fill('agata');
-  await page.getByLabel('Senha').fill('5678');
+  await page.getByLabel('Senha', { exact: true }).fill('5678');
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('heading', { name: /Agata|Ágata/ })).toBeVisible();
   await page.getByRole('button', { name: 'Sair' }).click();
   await page.getByLabel('Usuário').fill('admin');
-  await page.getByLabel('Senha').fill('admin');
+  await page.getByLabel('Senha', { exact: true }).fill('admin');
   await page.getByRole('button', { name: 'Entrar' }).click();
   await page.getByRole('link', { name: 'Usuários', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Usuários' })).toBeVisible();
@@ -156,7 +156,7 @@ async function resetDemo(request: APIRequestContext) {
 async function signInAsAdmin(page: import('@playwright/test').Page) {
   await page.goto('/login');
   await page.getByLabel('Usuário').fill('admin');
-  await page.getByLabel('Senha').fill('admin');
+  await page.getByLabel('Senha', { exact: true }).fill('admin');
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('heading', { name: /Administrador/ })).toBeVisible();
 }
