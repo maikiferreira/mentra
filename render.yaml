@@ -30,14 +30,18 @@ services:
       # Assinaturas e e-mail: valores preenchidos no painel do Render.
       - key: APP_URL
         sync: false
-      - key: STRIPE_SECRET_KEY
+      - key: EDUZZ_CHECKOUT_MONTHLY
         sync: false
-      - key: STRIPE_WEBHOOK_SECRET
+      - key: EDUZZ_CHECKOUT_ANNUAL
         sync: false
-      - key: STRIPE_PRICE_MONTHLY
+      - key: EDUZZ_PRODUCT_MONTHLY
         sync: false
-      - key: STRIPE_PRICE_ANNUAL
+      - key: EDUZZ_PRODUCT_ANNUAL
         sync: false
+      - key: EDUZZ_WEBHOOK_SECRET
+        sync: false
+      - key: EDUZZ_CUSTOMER_AREA_URL
+        value: https://orbita.eduzz.com
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

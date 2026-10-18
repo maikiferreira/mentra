@@ -15,28 +15,27 @@ import {
 import { logger } from '../../shared/infra/logger.js';
 import {
   PaymentModel,
-  ProcessedStripeEventModel,
+  ProcessedWebhookEventModel,
   SubscriptionModel,
+  UnmatchedBillingEventModel,
   UserModel,
+  type SubscriptionRecord,
 } from '../../shared/infra/models.js';
 import type { RequestAccess } from '../../shared/presentation/http.js';
 import { trialDaysLeft } from '../domain/access-policy.js';
 import type {
+  BillingContract,
   BillingEvent,
   BillingGateway,
   BillingInvoice,
-  BillingSubscription,
-} from '../infra/stripe-gateway.js';
+  BillingMatch,
+} from '../infra/billing-gateway.js';
 
 export interface BillingConfig {
   appUrl: string;
-  prices: Record<PlanId, string | undefined>;
 }
 export function billingConfigFromEnv(env = process.env): BillingConfig {
-  return {
-    appUrl: (env.APP_URL ?? 'http://localhost:5173').replace(/\/+$/, ''),
-    prices: { monthly: env.STRIPE_PRICE_MONTHLY, annual: env.STRIPE_PRICE_ANNUAL },
-  };
+  return { appUrl: (env.APP_URL ?? 'http://localhost:5173').replace(/\/+$/, '') };
 }
 
 export interface BillingRecipient {
@@ -67,6 +66,16 @@ function isDuplicateKey(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 11000;
 }
 
+/** Fim do período pago por uma fatura: 1 mês ou 1 ano depois do pagamento. */
+export function periodEndFrom(paidAt: Date, plan: PlanId | null): Date {
+  const end = new Date(paidAt);
+  if (plan === 'annual') end.setUTCFullYear(end.getUTCFullYear() + 1);
+  else end.setUTCMonth(end.getUTCMonth() + 1);
+  return end;
+}
+
+type SubscriptionDoc = SubscriptionRecord & { _id: unknown };
+
 export class BillingService {
   constructor(
     private readonly gateway: BillingGateway | null,
@@ -95,82 +104,67 @@ export class BillingService {
       plan: subscription?.plan ?? null,
       currentPeriodEnd: subscription?.currentPeriodEnd?.toISOString() ?? null,
       cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
-      canManage: Boolean(subscription?.stripeCustomerId),
+      canManage: Boolean(subscription?.eduzzContractId || subscription?.activatedAt),
+      customerAreaUrl: this.gateway?.customerAreaUrl() ?? null,
+      buyerEmail: subscription?.buyerEmail ?? null,
       trialEndsAt: user?.trialEndsAt?.toISOString() ?? null,
       trialDaysLeft: user ? trialDaysLeft(user, now) : 0,
       payments: payments.map((payment) => ({
-        id: payment.stripeInvoiceId,
+        id: payment.providerInvoiceId,
         amountCents: payment.amountCents,
         currency: payment.currency,
         plan: payment.plan ?? null,
         status: payment.status,
+        paymentMethod: payment.paymentMethod ?? null,
         paidAt: payment.paidAt?.toISOString() ?? null,
         createdAt: (payment as { createdAt?: Date }).createdAt?.toISOString() ?? null,
       })),
     };
   }
 
+  /** Devolve o link do checkout Eduzz do plano, rastreado com o username do comprador. */
   async startCheckout(username: string, plan: unknown) {
     if (!isPlanId(plan)) throw validationError('Escolha um plano válido.', 'plan');
     const gateway = this.requireGateway();
-    const priceId = this.config.prices[plan];
-    if (!priceId) throw billingUnavailable();
     const user = await UserModel.findOne({ username }, { name: 1, email: 1 }).lean();
     if (!user) throw new ApiError(401, 'UNAUTHORIZED', 'Sessão inválida ou expirada.');
     const subscription = await SubscriptionModel.findOne({ username }).lean();
-    if (subscription?.stripeSubscriptionId && LIVE_STATUSES.includes(subscription.status))
+    if (subscription?.activatedAt && LIVE_STATUSES.includes(subscription.status))
       throw conflict(
         'Você já tem uma assinatura ativa. Use "Gerenciar assinatura" para trocar de plano.',
       );
-    let customerId = subscription?.stripeCustomerId;
-    if (!customerId) {
-      const customer = await gateway.createCustomer({
-        email: user.email ?? null,
-        name: user.name,
-        username,
-      });
-      customerId = customer.id;
-      await SubscriptionModel.updateOne(
-        { username },
-        {
-          $set: { stripeCustomerId: customerId, email: user.email ?? null },
-          $setOnInsert: { username },
-        },
-        { upsert: true },
-      );
-    }
-    return gateway.createCheckoutSession({
-      customerId,
-      priceId,
-      username,
-      successUrl: `${this.config.appUrl}/assinatura/sucesso?session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${this.config.appUrl}/assinatura/planos`,
-    });
+    const url = gateway.checkoutUrl(plan, { username, email: user.email ?? null });
+    if (!url) throw billingUnavailable();
+    return { url };
   }
 
+  /** Área do comprador Eduzz: troca do meio de pagamento e cancelamento (RN-PAY-07). */
   async openPortal(username: string) {
     const gateway = this.requireGateway();
     const subscription = await SubscriptionModel.findOne({ username }).lean();
-    if (!subscription?.stripeCustomerId)
+    if (!subscription?.eduzzContractId && !subscription?.activatedAt)
       throw conflict('Você ainda não tem uma assinatura para gerenciar.');
-    return gateway.createPortalSession({
-      customerId: subscription.stripeCustomerId,
-      returnUrl: `${this.config.appUrl}/perfil/assinatura`,
-    });
+    const url = gateway.customerAreaUrl();
+    if (!url) throw billingUnavailable();
+    return { url };
   }
 
-  /** Valida a assinatura do Stripe; lança InvalidWebhookSignature. */
+  /** Valida a assinatura do webhook; lança InvalidWebhookSignature. */
   parseWebhook(payload: Buffer, signature: string | undefined) {
-    return this.requireGateway().constructEvent(payload, signature);
+    return this.requireGateway().parseWebhook(payload, signature);
   }
 
   /**
    * RN-PAY-10: o webhook é a fonte da verdade. Cada evento é processado uma única vez;
-   * se o processamento falhar, o registro é desfeito para o Stripe poder reenviar.
+   * se o processamento falhar, o registro é desfeito para o provedor poder reenviar.
    */
   async handleEvent(event: BillingEvent): Promise<{ duplicate: boolean }> {
     try {
-      await ProcessedStripeEventModel.create({ eventId: event.id, type: event.type });
+      await ProcessedWebhookEventModel.create({
+        eventId: event.id,
+        provider: this.gateway?.provider ?? 'eduzz',
+        type: event.type,
+      });
     } catch (error) {
       if (isDuplicateKey(error)) return { duplicate: true };
       throw error;
@@ -178,7 +172,7 @@ export class BillingService {
     try {
       await this.dispatch(event);
     } catch (error) {
-      await ProcessedStripeEventModel.deleteOne({ eventId: event.id });
+      await ProcessedWebhookEventModel.deleteOne({ eventId: event.id });
       throw error;
     }
     return { duplicate: false };
@@ -186,158 +180,136 @@ export class BillingService {
 
   private async dispatch(event: BillingEvent) {
     switch (event.type) {
-      case 'checkout.session.completed':
-        return this.onCheckoutCompleted(event);
       case 'invoice.paid':
-        return this.onInvoicePaid(event.invoice);
-      case 'invoice.payment_failed':
-        return this.onInvoiceFailed(event.invoice);
-      case 'customer.subscription.updated':
-      case 'customer.subscription.deleted':
-        // Busca o estado atual: eventos podem chegar fora de ordem.
-        return this.syncSubscription(
-          await this.requireGateway().retrieveSubscription(event.subscriptionId),
-        );
+        return this.onInvoicePaid(event, event.invoice);
+      case 'invoice.refunded':
+        return this.onInvoiceRefunded(event, event.invoice);
+      case 'contract.updated':
+        return this.onContractUpdated(event, event.contract);
       case 'ignored':
         return undefined;
     }
   }
 
-  private async onCheckoutCompleted(
-    event: Extract<BillingEvent, { type: 'checkout.session.completed' }>,
-  ) {
-    const username =
-      event.username ??
-      (event.customerId
-        ? (await SubscriptionModel.findOne({ stripeCustomerId: event.customerId }).lean())?.username
-        : undefined);
-    if (!username) {
-      logger.warn({ eventId: event.id }, 'checkout.session.completed sem usuário vinculado');
-      return;
-    }
-    await SubscriptionModel.updateOne(
-      { username },
-      {
-        $set: {
-          ...(event.customerId ? { stripeCustomerId: event.customerId } : {}),
-          ...(event.subscriptionId ? { stripeSubscriptionId: event.subscriptionId } : {}),
-        },
-        $setOnInsert: { username },
-      },
-      { upsert: true },
-    );
-    if (event.subscriptionId)
-      await this.syncSubscription(
-        await this.requireGateway().retrieveSubscription(event.subscriptionId),
-        username,
-      );
-  }
-
-  private async onInvoicePaid(invoice: BillingInvoice) {
-    const username = await this.usernameForInvoice(invoice);
-    if (!username) {
-      logger.warn({ invoiceId: invoice.id }, 'invoice.paid sem usuário vinculado');
-      return;
-    }
-    if (invoice.amountPaidCents > 0)
+  private async onInvoicePaid(event: BillingEvent, invoice: BillingInvoice) {
+    const username = await this.resolveUsername(invoice.match);
+    if (!username) return this.recordUnmatched(event, invoice.match);
+    const existing = await SubscriptionModel.findOne({ username }).lean();
+    const plan = this.planForProducts(invoice.productIds) ?? this.knownPlan(existing);
+    const paidAt = invoice.paidAt ?? new Date();
+    if (invoice.amountCents > 0)
       await PaymentModel.updateOne(
-        { stripeInvoiceId: invoice.id },
+        { providerInvoiceId: invoice.id },
         {
           $set: {
             username,
-            amountCents: invoice.amountPaidCents,
+            amountCents: invoice.amountCents,
             currency: invoice.currency,
-            plan: this.planForPrice(invoice.priceId),
+            plan,
             status: 'paid',
-            paidAt: invoice.paidAt ?? new Date(),
+            paymentMethod: invoice.paymentMethod,
+            installments: invoice.installments,
+            paidAt,
           },
         },
         { upsert: true },
       );
-    if (invoice.subscriptionId)
-      await this.syncSubscription(
-        await this.requireGateway().retrieveSubscription(invoice.subscriptionId),
-        username,
-      );
+    const paidUntil = periodEndFrom(paidAt, plan);
+    const currentPeriodEnd =
+      existing?.currentPeriodEnd && existing.currentPeriodEnd > paidUntil
+        ? existing.currentPeriodEnd
+        : paidUntil;
+    const updated = await this.saveSubscription(username, {
+      ...(invoice.match.contractId ? { eduzzContractId: invoice.match.contractId } : {}),
+      ...(invoice.match.buyerEmail ? { buyerEmail: invoice.match.buyerEmail } : {}),
+      status: 'active',
+      plan,
+      startedAt: existing?.startedAt ?? paidAt,
+      currentPeriodEnd,
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      pastDueSince: null,
+      cancelNoticeSentAt: null,
+    });
+    if (updated) await this.afterStatusChange(updated, existing);
   }
 
-  private async onInvoiceFailed(invoice: BillingInvoice) {
-    const username = await this.usernameForInvoice(invoice);
-    if (!username) {
-      logger.warn({ invoiceId: invoice.id }, 'invoice.payment_failed sem usuário vinculado');
-      return;
-    }
-    const existing = await PaymentModel.findOne({ stripeInvoiceId: invoice.id }).lean();
-    if (existing?.status === 'paid') return;
+  private async onInvoiceRefunded(event: BillingEvent, invoice: BillingInvoice) {
+    const username = await this.resolveUsername(invoice.match);
+    if (!username) return this.recordUnmatched(event, invoice.match);
+    const existing = await SubscriptionModel.findOne({ username }).lean();
     await PaymentModel.updateOne(
-      { stripeInvoiceId: invoice.id },
+      { providerInvoiceId: invoice.id },
       {
-        $set: {
-          username,
-          amountCents: invoice.amountDueCents,
+        $set: { username, status: 'refunded' },
+        $setOnInsert: {
+          amountCents: invoice.amountCents,
           currency: invoice.currency,
-          plan: this.planForPrice(invoice.priceId),
-          status: 'failed',
-          paidAt: null,
+          plan: this.planForProducts(invoice.productIds) ?? this.knownPlan(existing),
+          paymentMethod: invoice.paymentMethod,
+          installments: invoice.installments,
+          paidAt: invoice.paidAt,
         },
       },
       { upsert: true },
     );
+    // Reembolso ou chargeback corta o acesso na hora.
     const now = new Date();
-    await SubscriptionModel.updateOne(
-      { username, status: { $in: ['active', 'trialing'] } },
-      { $set: { status: 'past_due', pastDueSince: now } },
-    );
-    await SubscriptionModel.updateOne(
-      { username, status: 'past_due', pastDueSince: null },
-      { $set: { pastDueSince: now } },
-    );
-    // Novas tentativas da mesma fatura não repetem o aviso.
-    if (existing?.status !== 'failed') {
-      const recipient = await this.recipient(username);
-      if (recipient) await this.notify(() => this.notifier.paymentFailed(recipient));
-    }
+    await this.saveSubscription(username, {
+      status: 'canceled',
+      currentPeriodEnd: now,
+      cancelAtPeriodEnd: false,
+      canceledAt: existing?.canceledAt ?? now,
+      pastDueSince: null,
+    });
   }
 
-  private async syncSubscription(remote: BillingSubscription, usernameHint?: string) {
-    const existing =
-      (await SubscriptionModel.findOne({ stripeSubscriptionId: remote.id }).lean()) ??
-      (usernameHint || remote.username
-        ? await SubscriptionModel.findOne({ username: usernameHint ?? remote.username }).lean()
-        : null) ??
-      (remote.customerId
-        ? await SubscriptionModel.findOne({ stripeCustomerId: remote.customerId }).lean()
-        : null);
-    const username = existing?.username ?? usernameHint ?? remote.username;
-    if (!username) {
-      logger.warn({ subscriptionId: remote.id }, 'assinatura do Stripe sem usuário vinculado');
-      return;
-    }
+  private async onContractUpdated(event: BillingEvent, contract: BillingContract) {
+    const username = await this.resolveUsername(contract.match);
+    if (!username) return this.recordUnmatched(event, contract.match);
+    const existing = await SubscriptionModel.findOne({ username }).lean();
     const now = new Date();
-    const scheduledEnd = remote.cancelAtPeriodEnd || remote.status === 'canceled';
-    const updated = await SubscriptionModel.findOneAndUpdate(
-      { username },
-      {
-        $set: {
-          stripeSubscriptionId: remote.id,
-          ...(remote.customerId ? { stripeCustomerId: remote.customerId } : {}),
-          status: remote.status,
-          plan: this.planForPrice(remote.priceId) ?? existing?.plan ?? null,
-          startedAt: existing?.startedAt ?? remote.startedAt,
-          currentPeriodEnd: remote.currentPeriodEnd,
-          cancelAtPeriodEnd: remote.cancelAtPeriodEnd,
-          canceledAt: remote.canceledAt,
-          pastDueSince: remote.status === 'past_due' ? (existing?.pastDueSince ?? now) : null,
-          // Reativada antes do fim: um cancelamento futuro volta a gerar aviso.
-          ...(scheduledEnd ? {} : { cancelNoticeSentAt: null }),
-        },
-        $setOnInsert: { username },
-      },
-      { upsert: true, new: true },
-    ).lean();
-    if (!updated) return;
+    // Depois da ativação, "aguardando pagamento" é renovação em atraso, não compra nova.
+    const status: SubscriptionStatus =
+      contract.status === 'incomplete' && existing?.activatedAt ? 'past_due' : contract.status;
+    const canceled = status === 'canceled';
+    const currentPeriodEnd = canceled
+      ? // Cancelado: o acesso vai até o fim do período já pago (RN-PAY-07).
+        (existing?.currentPeriodEnd ?? now)
+      : status === 'active' || status === 'trialing'
+        ? (contract.nextChargeAt ?? existing?.currentPeriodEnd ?? null)
+        : (existing?.currentPeriodEnd ?? contract.nextChargeAt);
+    const updated = await this.saveSubscription(username, {
+      eduzzContractId: contract.id || existing?.eduzzContractId,
+      ...(contract.match.buyerEmail ? { buyerEmail: contract.match.buyerEmail } : {}),
+      providerStatus: contract.providerStatus,
+      status,
+      plan: this.planForProducts(contract.productIds) ?? this.knownPlan(existing),
+      startedAt: existing?.startedAt ?? contract.startedAt,
+      currentPeriodEnd,
+      cancelAtPeriodEnd: canceled,
+      canceledAt: canceled ? (existing?.canceledAt ?? now) : null,
+      pastDueSince: status === 'past_due' ? (existing?.pastDueSince ?? now) : null,
+      // Reativada antes do fim: um cancelamento futuro volta a gerar aviso.
+      ...(canceled ? {} : { cancelNoticeSentAt: null }),
+    });
+    if (updated) await this.afterStatusChange(updated, existing);
+  }
 
-    if (remote.status === 'active' || remote.status === 'trialing') {
+  private async saveSubscription(username: string, fields: Record<string, unknown>) {
+    const set = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
+    return (await SubscriptionModel.findOneAndUpdate(
+      { username },
+      { $set: { provider: 'eduzz', ...set }, $setOnInsert: { username } },
+      { upsert: true, new: true },
+    ).lean()) as SubscriptionDoc | null;
+  }
+
+  /** E-mails de liberação, falha e cancelamento, cada um enviado uma única vez. */
+  private async afterStatusChange(updated: SubscriptionDoc, previous: SubscriptionRecord | null) {
+    const now = new Date();
+    const { username } = updated;
+    if (updated.status === 'active' || updated.status === 'trialing') {
       // Marca atômica: só um evento envia o e-mail de liberação (RN-PAY-08/10).
       const claimed = await SubscriptionModel.updateOne(
         { _id: updated._id, activatedAt: null },
@@ -349,72 +321,96 @@ export class BillingService {
           { username, trialEndsAt: { $gt: now } },
           { $set: { trialEndsAt: now } },
         );
-        const recipient = await this.recipient(username);
-        if (recipient)
-          await this.notify(() =>
-            this.notifier.accessReleased(
-              recipient,
-              isPlanId(updated.plan) ? updated.plan : null,
-              remote.currentPeriodEnd,
-            ),
-          );
+        await this.notifyUser(username, (to) =>
+          this.notifier.accessReleased(
+            to,
+            isPlanId(updated.plan) ? updated.plan : null,
+            updated.currentPeriodEnd ?? null,
+          ),
+        );
       }
     }
-    if (scheduledEnd && updated.activatedAt !== null) {
+    if (updated.status === 'past_due' && previous?.status !== 'past_due')
+      await this.notifyUser(username, (to) => this.notifier.paymentFailed(to));
+    if (updated.status === 'canceled' && updated.cancelAtPeriodEnd && updated.activatedAt) {
       const claimed = await SubscriptionModel.updateOne(
         { _id: updated._id, cancelNoticeSentAt: null, activatedAt: { $ne: null } },
         { $set: { cancelNoticeSentAt: now } },
       );
-      if (claimed.modifiedCount === 1) {
-        const recipient = await this.recipient(username);
-        if (recipient)
-          await this.notify(() =>
-            this.notifier.subscriptionCanceled(recipient, remote.currentPeriodEnd),
-          );
-      }
+      if (claimed.modifiedCount === 1)
+        await this.notifyUser(username, (to) =>
+          this.notifier.subscriptionCanceled(to, updated.currentPeriodEnd ?? null),
+        );
     }
   }
 
-  private async usernameForInvoice(invoice: BillingInvoice) {
-    const bySubscription = invoice.subscriptionId
-      ? await SubscriptionModel.findOne({ stripeSubscriptionId: invoice.subscriptionId }).lean()
-      : null;
-    if (bySubscription) return bySubscription.username;
-    const byCustomer = invoice.customerId
-      ? await SubscriptionModel.findOne({ stripeCustomerId: invoice.customerId }).lean()
-      : null;
-    if (byCustomer) return byCustomer.username;
-    if (!invoice.subscriptionId) return null;
-    return (await this.requireGateway().retrieveSubscription(invoice.subscriptionId)).username;
+  /** Rastreio do checkout > contrato já vinculado > e-mail da compra. */
+  private async resolveUsername(match: BillingMatch): Promise<string | null> {
+    if (match.tracker) {
+      const user = await UserModel.findOne({ username: match.tracker.toLowerCase() }).lean();
+      if (user) return user.username;
+    }
+    if (match.contractId) {
+      const sub = await SubscriptionModel.findOne({ eduzzContractId: match.contractId }).lean();
+      if (sub) return sub.username;
+    }
+    if (match.buyerEmail) {
+      const sub = await SubscriptionModel.findOne({ buyerEmail: match.buyerEmail }).lean();
+      if (sub) return sub.username;
+      const users = await UserModel.find({ email: match.buyerEmail }, { username: 1 })
+        .limit(2)
+        .lean();
+      // E-mail repetido em mais de um usuário é ambíguo: fica para o admin vincular.
+      if (users.length === 1 && users[0]) return users[0].username;
+    }
+    return null;
   }
 
-  private async recipient(username: string): Promise<BillingRecipient | null> {
+  /** RN-PAY-11: evento sem usuário vira pendência no painel do admin. */
+  private async recordUnmatched(event: BillingEvent, match: BillingMatch) {
+    logger.warn(
+      { eventId: event.id, type: event.type },
+      'evento de cobrança sem usuário vinculado',
+    );
+    await UnmatchedBillingEventModel.updateOne(
+      { eventId: event.id },
+      {
+        $setOnInsert: {
+          type: event.type,
+          tracker: match.tracker,
+          contractId: match.contractId,
+          buyerEmail: match.buyerEmail,
+          payload: event,
+        },
+      },
+      { upsert: true },
+    );
+  }
+
+  private async notifyUser(username: string, send: (to: BillingRecipient) => Promise<void>) {
     const [user, subscription] = await Promise.all([
       UserModel.findOne({ username }, { name: 1, email: 1 }).lean(),
-      SubscriptionModel.findOne({ username }, { email: 1 }).lean(),
+      SubscriptionModel.findOne({ username }, { email: 1, buyerEmail: 1 }).lean(),
     ]);
-    const email = user?.email ?? subscription?.email;
+    const email = user?.email ?? subscription?.buyerEmail ?? subscription?.email;
     if (!user || !email) {
       logger.warn({ username }, 'usuário sem e-mail: aviso de cobrança não enviado');
-      return null;
+      return;
     }
-    return { username, name: user.name, email };
-  }
-
-  /** Falha de e-mail nunca derruba o processamento do webhook. */
-  private async notify(send: () => Promise<void>) {
+    // Falha de e-mail nunca derruba o processamento do webhook.
     try {
-      await send();
+      await send({ username, name: user.name, email });
     } catch (error) {
       logger.error({ err: error }, 'falha ao enviar e-mail de cobrança');
     }
   }
 
-  private planForPrice(priceId: string | null): PlanId | null {
-    if (!priceId) return null;
-    if (priceId === this.config.prices.monthly) return 'monthly';
-    if (priceId === this.config.prices.annual) return 'annual';
-    return null;
+  private planForProducts(productIds: string[]): PlanId | null {
+    return this.gateway?.planForProduct(productIds) ?? null;
+  }
+
+  private knownPlan(subscription: SubscriptionRecord | null): PlanId | null {
+    return subscription && isPlanId(subscription.plan) ? subscription.plan : null;
   }
 
   private requireGateway(): BillingGateway {

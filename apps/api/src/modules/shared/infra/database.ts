@@ -3,7 +3,8 @@ import {
   LeadModel,
   PatientModel,
   PaymentModel,
-  ProcessedStripeEventModel,
+  ProcessedWebhookEventModel,
+  UnmatchedBillingEventModel,
   SubscriptionModel,
   UserModel,
 } from './models.js';
@@ -16,7 +17,8 @@ export const initModels = () =>
     LeadModel.init(),
     SubscriptionModel.init(),
     PaymentModel.init(),
-    ProcessedStripeEventModel.init(),
+    ProcessedWebhookEventModel.init(),
+    UnmatchedBillingEventModel.init(),
   ]);
 
 export async function connectDatabase(

@@ -20,10 +20,8 @@ import {
   type BillingConfig,
 } from './modules/billing/application/billing-service.js';
 import { createEmailNotifier } from './modules/billing/application/emails.js';
-import {
-  createBillingGatewayFromEnv,
-  type BillingGateway,
-} from './modules/billing/infra/stripe-gateway.js';
+import type { BillingGateway } from './modules/billing/infra/billing-gateway.js';
+import { createBillingGatewayFromEnv } from './modules/billing/infra/eduzz-gateway.js';
 import {
   createAdminBillingRouter,
   createBillingRouter,
@@ -32,7 +30,7 @@ import {
 import { BillingMetricsService } from './modules/billing/application/billing-metrics-service.js';
 
 export interface AppOptions {
-  /** `null` desliga o Stripe (rotas de billing respondem 503); omitido, lê do ambiente. */
+  /** `null` desliga a cobrança (rotas de billing respondem 503); omitido, lê do ambiente. */
   billingGateway?: BillingGateway | null;
   billingConfig?: BillingConfig;
 }
@@ -82,7 +80,7 @@ export function createApp(options: AppOptions = {}) {
   });
   // O webhook precisa do corpo bruto para validar a assinatura: fica antes do express.json.
   app.post(
-    '/api/v1/billing/webhook',
+    '/api/v1/billing/eduzz/webhook',
     express.raw({ type: 'application/json', limit: '1mb' }),
     createWebhookHandler(billing),
   );

@@ -34,5 +34,5 @@ export const billingUnavailable = () =>
   new ApiError(
     503,
     'BILLING_UNAVAILABLE',
-    'Pagamentos indisponíveis no momento: o Stripe não está configurado neste servidor.',
+    'Pagamentos indisponíveis no momento: a Eduzz não está configurada neste servidor.',
   );
