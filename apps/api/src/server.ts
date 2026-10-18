@@ -2,7 +2,13 @@ import 'dotenv/config';
 import { createApp } from './app.js';
 import { connectDatabase, disconnectDatabase } from './modules/shared/infra/database.js';
 
-const port = Number(process.env.API_PORT ?? 3000);
+const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
+
+if (process.env.NODE_ENV === 'production' && (process.env.JWT_SECRET ?? '').length < 32) {
+  console.error('JWT_SECRET must be set (at least 32 characters) in production.');
+  process.exit(1);
+}
+
 const app = createApp();
 
 try {

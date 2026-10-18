@@ -36,7 +36,15 @@ export async function seedDatabase() {
   }
 }
 
-if (process.argv[1]?.endsWith('/seed.ts') || process.argv[1]?.endsWith('/seed.js')) {
+const entry = process.argv[1]?.replaceAll('\\', '/');
+if (entry?.endsWith('/seed.ts') || entry?.endsWith('/seed.js')) {
+  // O seed cria usuários de demonstração com senhas triviais (admin/admin etc.).
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PRODUCTION_SEED !== 'true') {
+    console.error(
+      'Seed de demonstração bloqueado em produção. Use create-admin, ou defina ALLOW_PRODUCTION_SEED=true.',
+    );
+    process.exit(1);
+  }
   try {
     await connectDatabase();
     await seedDatabase();

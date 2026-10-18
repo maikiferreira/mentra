@@ -1,0 +1,72 @@
+# Render Blueprint — Mente Ativa
+# Domínio final assumido: menteativaa.com.br (troque em WEB_ORIGINS e VITE_API_URL se for outro).
+# Enquanto os domínios customizados não estiverem ativos, os endereços *.onrender.com
+# também são aceitos/usados para validar o deploy.
+services:
+  - type: web
+    name: mente-ativa-api
+    runtime: node
+    rootDir: .
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: npm ci
+    startCommand: npm run start -w @mente-ativa/api
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: '22'
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: WEB_ORIGINS
+        value: https://app.menteativaa.com.br,https://mente-ativa-web.onrender.com
+      - key: LOG_LEVEL
+        value: info
+
+  - type: web
+    name: mente-ativa-web
+    runtime: static
+    rootDir: .
+    branch: main
+    buildCommand: npm ci && npm run build -w @mente-ativa/web
+    staticPublishPath: apps/web/dist
+    autoDeploy: true
+    pullRequestPreviewsEnabled: false
+    envVars:
+      - key: NODE_VERSION
+        value: '22'
+      # Depois que api.menteativaa.com.br tiver certificado, troque para https://api.menteativaa.com.br/api/v1
+      - key: VITE_API_URL
+        value: https://mente-ativa-api.onrender.com/api/v1
+      - key: VITE_SHOW_DEMO_FLAG
+        value: 'false'
+      - key: VITE_SHOW_DEMO_HINT
+        value: 'false'
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=31536000; includeSubDomains
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(), microphone=(), geolocation=()
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
