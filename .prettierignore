@@ -1,0 +1,7 @@
+docs/prototipo/**
+Mentra — Migração do protótipo para React + Node.js + MongoDB.md
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/

@@ -1,0 +1,85 @@
+import type { MeemScores } from '@mentra/shared';
+
+export const SEED_USERS = [
+  { username: 'admin', name: 'Administrador', role: 'admin' as const, password: 'admin' },
+  { username: 'prof1', name: 'Profissional 1', role: 'professional' as const, password: 'prof1' },
+  { username: 'prof2', name: 'Profissional 2', role: 'professional' as const, password: 'prof2' },
+];
+
+export const SEED_PATIENTS = [
+  {
+    code: '014',
+    initials: 'M.S.',
+    age: 78,
+    educationYears: 4,
+    group: 'Grupo da manhã',
+    responsibleUsername: 'prof1',
+    objective: 'Manter atenção e memória no dia a dia',
+    interests: 'Ex-costureira. Gosta de música antiga e de bordado.',
+    vision: 'Leve',
+    hearing: 'Sem limitação',
+    mobility: 'Sem limitação',
+    phone: '(32) 99999-0014',
+    address: 'Rua das Flores, 120, Centro, Juiz de Fora - MG',
+    emergencyContact: {
+      name: 'Contato fictício A',
+      phone: '(32) 98888-0014',
+      relationship: 'Filho(a)',
+    },
+    evaluations: [
+      { date: '03/2026', scores: { ori: 9, reg: 3, ate: 3, evo: 2, lin: 8 } satisfies MeemScores },
+      { date: '06/2026', scores: { ori: 9, reg: 3, ate: 4, evo: 2, lin: 8 } satisfies MeemScores },
+      { date: '09/2026', scores: { ori: 8, reg: 3, ate: 3, evo: 1, lin: 8 } satisfies MeemScores },
+    ],
+  },
+  {
+    code: '021',
+    initials: 'J.A.',
+    age: 82,
+    educationYears: 8,
+    group: 'Individual',
+    responsibleUsername: 'prof2',
+    objective: 'Estimular a linguagem e a atenção',
+    interests: 'Aposentado do comércio. Gosta de futebol e de dominó.',
+    vision: 'Sem limitação',
+    hearing: 'Leve',
+    mobility: 'Leve',
+    phone: '(32) 99999-0021',
+    address: 'Av. Exemplo, 455, apto 302, São Mateus, Juiz de Fora - MG',
+    emergencyContact: {
+      name: 'Contato fictício B',
+      phone: '(32) 98888-0021',
+      relationship: 'Cônjuge',
+    },
+    evaluations: [
+      { date: '03/2026', scores: { ori: 8, reg: 2, ate: 2, evo: 1, lin: 7 } satisfies MeemScores },
+      { date: '06/2026', scores: { ori: 8, reg: 3, ate: 2, evo: 1, lin: 7 } satisfies MeemScores },
+      { date: '09/2026', scores: { ori: 8, reg: 3, ate: 3, evo: 1, lin: 7 } satisfies MeemScores },
+    ],
+  },
+  {
+    code: '009',
+    initials: 'R.L.',
+    age: 74,
+    educationYears: 11,
+    group: 'Grupo da tarde',
+    responsibleUsername: 'prof1',
+    objective: 'Preservar a atenção e a evocação',
+    interests: 'Professora aposentada. Gosta de leitura e de jardinagem.',
+    vision: 'Leve',
+    hearing: 'Sem limitação',
+    mobility: 'Sem limitação',
+    phone: '(32) 99999-0009',
+    address: 'Rua Modelo, 87, Santa Helena, Juiz de Fora - MG',
+    emergencyContact: {
+      name: 'Contato fictício C',
+      phone: '(32) 98888-0009',
+      relationship: 'Neto(a)',
+    },
+    evaluations: [
+      { date: '03/2026', scores: { ori: 10, reg: 3, ate: 5, evo: 2, lin: 8 } satisfies MeemScores },
+      { date: '06/2026', scores: { ori: 10, reg: 3, ate: 4, evo: 3, lin: 8 } satisfies MeemScores },
+      { date: '09/2026', scores: { ori: 10, reg: 3, ate: 4, evo: 2, lin: 8 } satisfies MeemScores },
+    ],
+  },
+];
