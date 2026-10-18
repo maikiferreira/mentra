@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import type { LeadsDto, UsersDto } from '@mente-ativa/shared';
 import { useUIStore } from '../ui-store';
 import { ErrorNote, Loading } from '../components/Feedback';
 import { client } from '../lib/client';
@@ -7,25 +8,11 @@ import { client } from '../lib/client';
 function UsersPage() {
   const users = useQuery({
     queryKey: ['users'],
-    queryFn: () =>
-      client<{
-        items: Array<{ username: string; name: string; role: string; patientCount: number }>;
-      }>('/users'),
+    queryFn: () => client<UsersDto>('/users'),
   });
   const leads = useQuery({
     queryKey: ['leads'],
-    queryFn: () =>
-      client<{
-        items: Array<{
-          name: string;
-          phone: string;
-          email: string;
-          profile: string;
-          workplace: string;
-          username: string;
-          createdAt: string;
-        }>;
-      }>('/leads'),
+    queryFn: () => client<LeadsDto>('/leads'),
   });
   if (users.isLoading || leads.isLoading) return <Loading />;
   if (users.error || leads.error) return <ErrorNote error={users.error || leads.error} />;

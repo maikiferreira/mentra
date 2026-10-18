@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { type PatientSummary } from '../api';
+import type { PatientListDto } from '@mente-ativa/shared';
 import { useUIStore } from '../ui-store';
 import { ErrorNote, Loading } from '../components/Feedback';
 import { client } from '../lib/client';
@@ -10,7 +10,7 @@ export function PatientList() {
   const session = useUIStore((state) => state.session)!;
   const query = useQuery({
     queryKey: ['patients', session.user.username],
-    queryFn: () => client<{ items: PatientSummary[] }>('/patients'),
+    queryFn: () => client<PatientListDto>('/patients'),
   });
   const items = query.data?.items ?? [];
   return (

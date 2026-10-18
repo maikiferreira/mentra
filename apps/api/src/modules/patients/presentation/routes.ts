@@ -26,6 +26,28 @@ patientRouter.post('/:id/fichas', async (request, response) =>
     .status(201)
     .json(await fichas.create(getRequestUser(request), request.params.id!, request.body)),
 );
+patientRouter.get('/:id/fichas/:evaluationId', async (request, response) =>
+  response.json(
+    await fichas.get(getRequestUser(request), request.params.id!, request.params.evaluationId!),
+  ),
+);
+patientRouter.put('/:id/fichas/:evaluationId', async (request, response) =>
+  response.json(
+    await fichas.update(
+      getRequestUser(request),
+      request.params.id!,
+      request.params.evaluationId!,
+      request.body,
+    ),
+  ),
+);
+patientRouter.delete('/:id/fichas/:evaluationId', async (request, response) => {
+  await fichas.delete(getRequestUser(request), request.params.id!, request.params.evaluationId!);
+  response.status(204).end();
+});
+patientRouter.get('/:id/overview', async (request, response) =>
+  response.json(await fichas.overview(getRequestUser(request), request.params.id!)),
+);
 patientRouter.get('/:id/evolution', async (request, response) =>
   response.json(await evolution.get(getRequestUser(request), request.params.id!)),
 );
@@ -49,6 +71,18 @@ patientRouter.delete('/:id', async (request, response) => {
   await patients.delete(getRequestUser(request), request.params.id!);
   response.status(204).end();
 });
+
+patientRouter.put('/:id/routine/:key/weeks/:week', async (request, response) =>
+  response.json(
+    await routines.markWeek(
+      getRequestUser(request),
+      request.params.id!,
+      request.params.key!,
+      request.params.week!,
+      request.body,
+    ),
+  ),
+);
 
 export const routineRouter = Router();
 routineRouter.use(requireAuth);

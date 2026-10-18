@@ -30,3 +30,6 @@ export const TONE_CHIP: Record<TrendResult['tone'], string> = {
 
 /** Quantidades sem máximo próprio no teste (ex.: palavras em 1 minuto). */
 export const MAX_COUNT = 99;
+
+/** `aaaa-mm-dd` → `dd/mm/aaaa`. */
+export const isoToBR = (dateISO: string) => dateISO.split('-').reverse().join('/');

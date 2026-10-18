@@ -26,8 +26,7 @@ test('RN-AUTH-01/RN-PAT-01/RN-FIC-01..05/RN-EVO-03..07: demo principal mantém f
   await page.getByRole('button', { name: 'Entrar' }).click();
 
   await expect(page.getByRole('heading', { name: /Administrador/ })).toBeVisible();
-  await expect(page.getByText('Pacientes no sistema')).toBeVisible();
-  await expect(page.getByText('3', { exact: true })).toBeVisible();
+  await expect(page.locator('.kpi', { hasText: 'Pacientes no sistema' })).toContainText('3');
   await expect(page.getByText('Profissionais cadastrados')).toBeVisible();
   await expect(page.getByText('Pacientes com queda recente')).toBeVisible();
 
@@ -109,6 +108,30 @@ test('RN-LEAD-01..06: cria acesso de teste, mostra pop-up e registra lead para a
   await expect(page.getByRole('heading', { name: 'Usuários' })).toBeVisible();
   await expect(page.getByRole('cell', { name: 'Ágata Souza' })).toHaveCount(2);
   await expect(page.getByRole('cell', { name: 'agata', exact: true })).toHaveCount(2);
+});
+
+test('RN-VIS/RN-REL/RN-FIC-06: visão geral, relatório e edição de ficha com os nove testes do seed', async ({
+  page,
+}) => {
+  await signInAsAdmin(page);
+  await page.goto('/pacientes/014/visao-geral');
+  await expect(page.getByText('Humor alterado junto com a cognição.')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Funcionalidade' })).toContainText('Pfeffer');
+  await page.getByRole('link', { name: 'Gerar relatório (PDF)' }).click();
+  await expect(page.getByRole('heading', { name: 'Resumo por área' })).toBeVisible();
+  await expect(page.getByText('Escala de Depressão Geriátrica (GDS-15)')).toBeVisible();
+
+  await page.goto('/pacientes/014');
+  await page.getByRole('button', { name: 'Ver ficha de GDS-15 de 14/09/2026' }).click();
+  await expect(
+    page.getByText('Relata desânimo desde a mudança da filha para outra cidade.'),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Editar ficha' }).click();
+  await expect(page.getByRole('status')).toContainText('Total: 7/15');
+  await page.getByLabel('Observações').fill('Relata desânimo; família avisada.');
+  await page.getByRole('button', { name: 'Salvar alterações' }).click();
+  await expect(page.getByText('Ficha de 14/09/2026 atualizada.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Relata desânimo; família avisada.')).toBeVisible();
 });
 
 test('RN-AUTH-04: navegação mobile e tokens de tema acompanham preferências do dispositivo', async ({

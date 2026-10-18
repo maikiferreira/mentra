@@ -2,7 +2,7 @@ import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import { connectDatabase, disconnectDatabase } from './modules/shared/infra/database.js';
 import { PatientModel, UserModel } from './modules/shared/infra/models.js';
-import { SEED_PATIENTS, SEED_USERS } from './seed-data.js';
+import { SEED_PATIENTS, SEED_USERS, seedPatientDocument } from './seed-data.js';
 
 export async function seedDatabase() {
   for (const user of SEED_USERS) {
@@ -24,10 +24,7 @@ export async function seedDatabase() {
     await PatientModel.updateOne(
       { code: patient.code },
       {
-        $setOnInsert: {
-          ...patient,
-          suggestionStates: [],
-        },
+        $setOnInsert: seedPatientDocument(patient),
       },
       { upsert: true },
     );

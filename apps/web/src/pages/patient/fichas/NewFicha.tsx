@@ -10,9 +10,10 @@ import {
   type InstrumentDefinition,
   type InstrumentField,
   type InstrumentKey,
+  type FichaSavedDto,
   type InstrumentScores,
 } from '@mente-ativa/shared';
-import { jsonBody, type Patient } from '../../../api';
+import { jsonBody, type FichaDetail, type Patient } from '../../../api';
 import { useUIStore } from '../../../ui-store';
 import { ErrorNote } from '../../../components/Feedback';
 import { client } from '../../../lib/client';
@@ -55,24 +56,35 @@ function parseDraft(definition: InstrumentDefinition, draft: Draft) {
   return { scores, invalid, missing };
 }
 
-function InstrumentForm({
+/** Formulário de uma ficha: registra uma nova ou, com `editing`, corrige uma já salva. */
+export function InstrumentForm({
   definition,
   patient,
   id,
+  editing,
   onBack,
   onCancel,
+  onSaved,
 }: {
   definition: InstrumentDefinition;
   patient: Patient;
   id: string;
-  onBack: () => void;
+  editing?: FichaDetail;
+  onBack?: () => void;
   onCancel: () => void;
+  onSaved?: (date: string) => void;
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [date, setDate] = useState(todayISO);
-  const [draft, setDraft] = useState<Draft>(() => initialDraft(definition, patient));
-  const [observations, setObservations] = useState('');
+  const [date, setDate] = useState(() => editing?.dateISO ?? todayISO());
+  const [draft, setDraft] = useState<Draft>(() =>
+    editing
+      ? Object.fromEntries(
+          definition.fields.map((field) => [field.key, String(editing.scores[field.key] ?? '')]),
+        )
+      : initialDraft(definition, patient),
+  );
+  const [observations, setObservations] = useState(editing?.observations ?? '');
   const parsed = parseDraft(definition, draft);
   const complete = Boolean(date) && parsed.missing === 0 && parsed.invalid.size === 0;
   const preview = evaluateInstrument(definition, parsed.scores, {
@@ -82,20 +94,34 @@ function InstrumentForm({
     setDraft((current) => ({ ...current, [key]: value }));
   const save = useMutation({
     mutationFn: () =>
-      client<{ evaluation: { date: string } }>(`/patients/${id}/fichas`, {
-        method: 'POST',
-        body: jsonBody({ instrument: definition.key, date, scores: parsed.scores, observations }),
-      }),
+      editing
+        ? client<FichaSavedDto>(`/patients/${id}/fichas/${editing.id}`, {
+            method: 'PUT',
+            body: jsonBody({ date, scores: parsed.scores, observations }),
+          })
+        : client<FichaSavedDto>(`/patients/${id}/fichas`, {
+            method: 'POST',
+            body: jsonBody({
+              instrument: definition.key,
+              date,
+              scores: parsed.scores,
+              observations,
+            }),
+          }),
     onSuccess: async ({ evaluation }) => {
-      useUIStore.getState().markRegistered(id, evaluation.date);
+      if (!editing) useUIStore.getState().markRegistered(id, evaluation.date);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['fichas', id] }),
         queryClient.invalidateQueries({ queryKey: ['patient', id] }),
         queryClient.invalidateQueries({ queryKey: ['patients'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
         queryClient.invalidateQueries({ queryKey: ['evolution', id] }),
+        queryClient.invalidateQueries({ queryKey: ['ficha', id] }),
+        queryClient.invalidateQueries({ queryKey: ['overview', id] }),
+        queryClient.invalidateQueries({ queryKey: ['routines'] }),
       ]);
-      navigate(`/pacientes/${id}/evolucao`, { state: { instrument: definition.key } });
+      if (onSaved) onSaved(evaluation.date);
+      else navigate(`/pacientes/${id}/evolucao`, { state: { instrument: definition.key } });
     },
   });
   // Seções com mais de um campo viram blocos com título (ex.: Contorno, Números do relógio).
@@ -185,10 +211,14 @@ function InstrumentForm({
       }}
     >
       <div className="head-row">
-        <h2>Nova ficha · {definition.shortName}</h2>
-        <button className="btn small" type="button" onClick={onBack}>
-          Trocar teste
-        </button>
+        <h2>
+          {editing ? 'Editar ficha' : 'Nova ficha'} · {definition.shortName}
+        </h2>
+        {onBack && (
+          <button className="btn small" type="button" onClick={onBack}>
+            Trocar teste
+          </button>
+        )}
       </div>
       <p className="muted">{definition.name}</p>
       <p className="srcnote" style={{ marginBottom: 14 }}>
@@ -249,7 +279,7 @@ function InstrumentForm({
         </div>
         <div className="actions">
           <button className="btn primary" type="submit" disabled={!complete || save.isPending}>
-            Salvar ficha e atualizar evolução
+            {editing ? 'Salvar alterações' : 'Salvar ficha e atualizar evolução'}
           </button>
           <button className="btn" type="button" onClick={onCancel}>
             Cancelar
@@ -266,14 +296,18 @@ function InstrumentForm({
 export function NewFicha({
   patient,
   id,
+  initialInstrument,
   onCancel,
 }: {
   patient: Patient;
   id: string;
+  initialInstrument?: InstrumentKey | undefined;
   onCancel: () => void;
 }) {
-  const [category, setCategory] = useState<InstrumentCategory>('cognicao');
-  const [instrument, setInstrument] = useState<InstrumentKey | null>(null);
+  const [category, setCategory] = useState<InstrumentCategory>(
+    () => (initialInstrument && getInstrument(initialInstrument)?.category) || 'cognicao',
+  );
+  const [instrument, setInstrument] = useState<InstrumentKey | null>(initialInstrument ?? null);
   const definition = instrument ? getInstrument(instrument) : undefined;
   if (definition)
     return (

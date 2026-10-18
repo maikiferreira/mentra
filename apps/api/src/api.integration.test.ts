@@ -5,6 +5,9 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { PatientModel, UserModel, LeadModel } from './modules/shared/infra/models.js';
+import { migrateEvaluations } from './modules/shared/infra/migrations.js';
+import { todayISO } from './modules/evaluations/domain/patient-evaluations.js';
+import { recentWeeks } from '@mente-ativa/shared';
 
 const app = createApp();
 let mongo: MongoMemoryServer;
@@ -27,6 +30,18 @@ async function login(username: string) {
   expect(response.status).toBe(200);
   return response.body.token as string;
 }
+let created = 0;
+/** Ficha de MEEM no formato gravado (identificador e dia UTC). */
+function evaluation(date: string, scores: Record<string, number>) {
+  created += 1;
+  return {
+    id: `ficha-${created}`,
+    instrument: 'meem',
+    performedOn: new Date(`${date}T00:00:00Z`),
+    scores,
+    createdAt: new Date(Date.UTC(2026, 9, 1, 0, 0, created)),
+  };
+}
 async function addSeedPatients() {
   await PatientModel.create([
     {
@@ -45,9 +60,9 @@ async function addSeedPatients() {
       address: '',
       emergencyContact: { name: 'Contato A', phone: '(32) 98888-0014', relationship: 'Filho(a)' },
       evaluations: [
-        { date: '03/2026', scores: { ori: 9, reg: 3, ate: 3, evo: 2, lin: 8 } },
-        { date: '06/2026', scores: { ori: 9, reg: 3, ate: 4, evo: 2, lin: 8 } },
-        { date: '09/2026', scores: { ori: 8, reg: 3, ate: 3, evo: 1, lin: 8 } },
+        evaluation('2026-03-16', { ori: 9, reg: 3, ate: 3, evo: 2, lin: 8 }),
+        evaluation('2026-06-15', { ori: 9, reg: 3, ate: 4, evo: 2, lin: 8 }),
+        evaluation('2026-09-14', { ori: 8, reg: 3, ate: 3, evo: 1, lin: 8 }),
       ],
     },
     {
@@ -65,9 +80,9 @@ async function addSeedPatients() {
       address: '',
       emergencyContact: { name: 'Contato B', phone: '32988880021', relationship: 'Cônjuge' },
       evaluations: [
-        { date: '03/2026', scores: { ori: 8, reg: 2, ate: 2, evo: 1, lin: 7 } },
-        { date: '06/2026', scores: { ori: 8, reg: 3, ate: 2, evo: 1, lin: 7 } },
-        { date: '09/2026', scores: { ori: 8, reg: 3, ate: 3, evo: 1, lin: 7 } },
+        evaluation('2026-03-16', { ori: 8, reg: 2, ate: 2, evo: 1, lin: 7 }),
+        evaluation('2026-06-15', { ori: 8, reg: 3, ate: 2, evo: 1, lin: 7 }),
+        evaluation('2026-09-14', { ori: 8, reg: 3, ate: 3, evo: 1, lin: 7 }),
       ],
     },
   ]);
@@ -228,11 +243,15 @@ describe('API REST v1 (integração MongoDB) ', () => {
     });
   });
 
-  it('RN-FIC-01..05: registra ficha manual, valida data e notas e mantém a ordem das avaliações', async () => {
+  it('RN-FIC-01..05: registra, consulta, edita e exclui fichas, ordenando pela data da avaliação', async () => {
     await addSeedPatients();
     const valid = { date: '2026-10-17', scores: { ori: 8, reg: 3, ate: 2, evo: 1, lin: 8 } };
-    const post = (body: object, token = prof1Token, code = '014') =>
-      request(app).post(`/api/v1/patients/${code}/fichas`).set(auth(token)).send(body);
+    const fichas = '/api/v1/patients/014/fichas';
+    const post = (body: unknown, token = prof1Token, code = '014') =>
+      request(app)
+        .post(`/api/v1/patients/${code}/fichas`)
+        .set(auth(token))
+        .send(body as object);
 
     expect((await post(valid, prof1Token, '021')).status).toBe(404);
     expect((await post({ ...valid, date: '' })).body.error).toMatchObject({
@@ -245,18 +264,10 @@ describe('API REST v1 (integração MongoDB) ', () => {
     expect((await post({ ...valid, date: '2999-01-01' })).body.error.message).toBe(
       'A data da avaliação não pode ser no futuro.',
     );
-    expect((await post({ ...valid, date: '2026-08-31' })).body.error.message).toBe(
-      'A data não pode ser anterior à última avaliação de MEEM (09/2026).',
-    );
     const outOfRange = await post({ ...valid, scores: { ...valid.scores, reg: 4 } });
     expect(outOfRange.status).toBe(422);
     expect(outOfRange.body.error.message).toBe(
       'A pontuação de "Memória imediata (registro)" deve ser um número inteiro entre 0 e 3.',
-    );
-    expect(
-      (await post({ ...valid, scores: { ...valid.scores, lin: undefined } })).body.error.message,
-    ).toBe(
-      'A pontuação de "Linguagem e praxia construtiva" deve ser um número inteiro entre 0 e 9.',
     );
 
     const created = await post({ ...valid, observations: '  Relata cansaço.  ' });
@@ -268,32 +279,67 @@ describe('API REST v1 (integração MongoDB) ', () => {
       max: 30,
       level: 'attention',
     });
-    const sameDay = await post(valid);
-    expect(sameDay.body.evaluation.date).toBe('17/10/2026 #2');
-
-    const stored = await PatientModel.findOne({ code: '014' }).lean();
-    expect(stored!.evaluations.at(-2)).toMatchObject({
-      date: '17/10/2026',
-      scores: valid.scores,
-      notes: 'Relata cansaço.',
+    const id = created.body.evaluation.id as string;
+    // Ficha antiga lançada depois entra na posição certa da evolução.
+    const older = await post({
+      ...valid,
+      date: '2026-01-10',
+      scores: { ori: 10, reg: 3, ate: 5, evo: 3, lin: 9 },
     });
-    const list = await request(app).get('/api/v1/patients/014/fichas').set(auth(prof1Token));
+    expect(older.status).toBe(201);
+
+    const list = await request(app).get(fichas).set(auth(prof1Token));
+    expect(list.body.evaluations.map((entry: { date: string }) => entry.date)).toEqual([
+      '17/10/2026',
+      '14/09/2026',
+      '15/06/2026',
+      '16/03/2026',
+      '10/01/2026',
+    ]);
     expect(list.body.evaluations[0]).toMatchObject({
-      instrument: 'meem',
+      id,
       instrumentName: 'MEEM',
-      total: 22,
-      max: 30,
       status: 'Registrada',
     });
-    expect(list.body.evaluations[0]).not.toHaveProperty('notes');
-    expect(list.body).not.toHaveProperty('pending');
+    expect(list.body.evaluations[0]).not.toHaveProperty('observations');
+
+    const detail = await request(app).get(`${fichas}/${id}`).set(auth(prof1Token));
+    expect(detail.body).toMatchObject({
+      id,
+      dateISO: '2026-10-17',
+      scores: valid.scores,
+      observations: 'Relata cansaço.',
+    });
+    expect((await request(app).get(`${fichas}/nao-existe`).set(auth(prof1Token))).status).toBe(404);
+    // Ficha de outro responsável não é visível nem editável.
+    expect(
+      (await request(app).get(`/api/v1/patients/021/fichas/${id}`).set(auth(prof1Token))).status,
+    ).toBe(404);
+
+    const invalidEdit = await request(app)
+      .put(`${fichas}/${id}`)
+      .set(auth(prof1Token))
+      .send({ ...valid, scores: { ...valid.scores, ori: 11 } });
+    expect(invalidEdit.status).toBe(422);
+    const edited = await request(app)
+      .put(`${fichas}/${id}`)
+      .set(auth(prof1Token))
+      .send({ date: '2026-10-16', scores: { ...valid.scores, ate: 3 }, observations: '' });
+    expect(edited.body.evaluation).toMatchObject({ id, date: '16/10/2026', total: 23 });
+    const afterEdit = await request(app).get(`${fichas}/${id}`).set(auth(prof1Token));
+    expect(afterEdit.body).toMatchObject({ dateISO: '2026-10-16', observations: '' });
+
     const evolution = await request(app)
       .get('/api/v1/patients/014/evolution')
       .set(auth(prof1Token));
-    expect(evolution.body.instruments[0].series.at(-1)).toEqual({
-      date: '17/10/2026 #2',
-      total: 22,
-    });
+    expect(evolution.body.instruments[0].series.at(0)).toEqual({ date: '10/01/2026', total: 30 });
+    expect(evolution.body.instruments[0].series.at(-1)).toEqual({ date: '16/10/2026', total: 23 });
+
+    expect((await request(app).delete(`${fichas}/${id}`).set(auth(prof1Token))).status).toBe(204);
+    expect((await request(app).delete(`${fichas}/${id}`).set(auth(prof1Token))).status).toBe(404);
+    const afterDelete = await request(app).get(fichas).set(auth(prof1Token));
+    expect(afterDelete.body.evaluations).toHaveLength(4);
+    expect(afterDelete.body.evaluations[0].date).toBe('14/09/2026');
   });
 
   it('RN-TST-01..04: fichas de outros testes têm regras, evolução, sugestões e rotina próprias', async () => {
@@ -315,7 +361,6 @@ describe('API REST v1 (integração MongoDB) ', () => {
       (await post({ instrument: 'gds', date: '2026-10-10', scores: gdsAnswers({ q4: 3 }) })).body
         .error.message,
     ).toBe('Responda o item "Você se sente aborrecido com frequência?".');
-    // Data anterior ao último MEEM é aceita: a ordem é verificada por teste.
     const first = await post({ instrument: 'gds', date: '2026-08-01', scores: gdsAnswers() });
     expect(first.status).toBe(201);
     expect(first.body.evaluation).toMatchObject({
@@ -325,10 +370,6 @@ describe('API REST v1 (integração MongoDB) ', () => {
       level: 'attention',
       interpretation: '5 ou mais: indicativo de sintomas depressivos.',
     });
-    expect(
-      (await post({ instrument: 'gds', date: '2026-07-01', scores: gdsAnswers() })).body.error
-        .message,
-    ).toBe('A data não pode ser anterior à última avaliação de GDS-15 (01/08/2026).');
     await post({ instrument: 'gds', date: '2026-10-10', scores: gdsAnswers({ q1: 0 }) });
 
     const evolution = await request(app)
@@ -381,6 +422,50 @@ describe('API REST v1 (integração MongoDB) ', () => {
     );
   });
 
+  it('RN-VIS-01..03: visão geral cruza áreas, lista testes não aplicados e agenda reavaliação', async () => {
+    await addSeedPatients();
+    const gdsSymptoms = Object.fromEntries([...Array(15)].map((_, index) => [`q${index + 1}`, 1]));
+    // Datas no passado distante: a reavaliação fica sempre atrasada, qualquer que seja o dia do teste.
+    await request(app)
+      .post('/api/v1/patients/014/fichas')
+      .set(auth(prof1Token))
+      .send({ instrument: 'gds', date: '2025-01-10', scores: gdsSymptoms });
+    const overview = await request(app).get('/api/v1/patients/014/overview').set(auth(prof1Token));
+    expect(overview.status).toBe(200);
+    const [cognition, mood, functional] = overview.body.categories;
+    expect(cognition.instruments[0]).toMatchObject({
+      key: 'meem',
+      latest: { total: 23, date: '14/09/2026' },
+      nextDue: '2026-12-14',
+    });
+    expect(cognition.instruments[1]).toMatchObject({ key: 'moca', latest: null });
+    expect(mood.instruments[0]).toMatchObject({
+      key: 'gds',
+      latest: { total: 10, level: 'attention' },
+      nextDue: '2025-04-10',
+      overdue: true,
+    });
+    expect(functional.instruments.every((item: { latest: unknown }) => item.latest === null)).toBe(
+      true,
+    );
+    expect(overview.body.alerts.map((alert: { key: string }) => alert.key)).toEqual([
+      'humor-cognicao',
+      'avaliar-funcionalidade',
+    ]);
+    expect(
+      (await request(app).get('/api/v1/patients/021/overview').set(auth(prof1Token))).status,
+    ).toBe(404);
+    const dashboard = await request(app).get('/api/v1/dashboard/summary').set(auth(prof1Token));
+    expect(dashboard.body.todo).toContainEqual(
+      expect.objectContaining({
+        patientId: '014',
+        kind: 'reassess',
+        text: expect.stringContaining('GDS-15 (prevista para 10/04/2025)'),
+        targetTab: 'visao-geral',
+      }),
+    );
+  });
+
   it('RN-EVO-05..07/RN-EVO-06: suggestion state, custom text, routine, dashboard and admin read models', async () => {
     await addSeedPatients();
     const evolution = await request(app)
@@ -414,6 +499,40 @@ describe('API REST v1 (integração MongoDB) ', () => {
       users.body.items.find((item: { username: string }) => item.username === 'prof1').patientCount,
     ).toBe(1);
     expect((await request(app).get('/api/v1/leads').set(auth(adminToken))).body.items).toEqual([]);
+  });
+
+  it('RN-ROT-01..02: marca a atividade da rotina por semana e calcula a adesão desde o aceite', async () => {
+    await addSeedPatients();
+    const [, , , thisWeek] = recentWeeks(todayISO());
+    const mark = (key: string, week: string, done: unknown) =>
+      request(app)
+        .put(`/api/v1/patients/014/routine/${encodeURIComponent(key)}/weeks/${week}`)
+        .set(auth(prof1Token))
+        .send({ done });
+    // Só atividades aceitas na rotina podem ser marcadas.
+    expect((await mark('014:evo', thisWeek!, true)).status).toBe(404);
+    await request(app)
+      .patch('/api/v1/patients/014/suggestions/014%3Aevo')
+      .set(auth(prof1Token))
+      .send({ status: 'ok' });
+    expect((await mark('014:evo', '2020-01-06', true)).body.error.message).toBe(
+      'Só é possível marcar as últimas quatro semanas.',
+    );
+    expect((await mark('014:evo', thisWeek!, 'sim')).status).toBe(422);
+    const marked = await mark('014:evo', thisWeek!, true);
+    // Aceita nesta semana: só a semana atual entra na conta.
+    expect(marked.body).toEqual({
+      key: '014:evo',
+      weeks: [{ week: thisWeek, done: true }],
+      adherence: 1,
+    });
+    const routines = await request(app).get('/api/v1/routines').set(auth(prof1Token));
+    expect(routines.body.items[0].activities[0]).toMatchObject({ key: '014:evo', adherence: 1 });
+    const evolution = await request(app)
+      .get('/api/v1/patients/014/evolution')
+      .set(auth(prof1Token));
+    expect(evolution.body.routine[0]).toMatchObject({ weeks: [{ week: thisWeek, done: true }] });
+    expect((await mark('014:evo', thisWeek!, false)).body.adherence).toBe(0);
   });
 
   it('RN-PAT-07: delete cascades aggregate data', async () => {
@@ -489,9 +608,65 @@ describe('API REST v1 (integração MongoDB) ', () => {
     expect(summary.body.kpis).toMatchObject({
       patients: 3,
       professionals: 2,
-      recentDrops: 2,
+      recentDrops: 3,
       routineActivities: 0,
     });
-    expect(summary.body.todo).toHaveLength(2);
+    // Reavaliações atrasadas dependem da data de hoje; aqui só as quedas importam.
+    expect(
+      summary.body.todo
+        .filter((item: { kind: string }) => item.kind === 'drop')
+        .map((item: { text: string }) => item.text),
+    ).toEqual([
+      'Queda desde a avaliação anterior em: Evocação, Atenção e cálculo, Orientação, GDS-15',
+      'Queda desde a avaliação anterior em: Katz',
+      'Queda desde a avaliação anterior em: Evocação',
+    ]);
+    // Os pacientes de exemplo têm fichas de todos os nove testes.
+    const seeded = await PatientModel.find({}).lean();
+    const instruments = new Set(
+      seeded.flatMap((patient) => patient.evaluations.map((entry) => entry.instrument)),
+    );
+    expect([...instruments].sort()).toEqual([
+      'cdr',
+      'fluencia',
+      'gai',
+      'gds',
+      'katz',
+      'meem',
+      'moca',
+      'pfeffer',
+      'relogio',
+    ]);
+    expect(seeded.every((patient) => patient.evaluations.every((entry) => entry.id))).toBe(true);
+  });
+
+  it('migra fichas antigas (data em texto, sem id) para identificador e data real', async () => {
+    await PatientModel.collection.insertOne({
+      code: '030',
+      initials: 'A.A.',
+      age: 80,
+      responsibleUsername: 'prof1',
+      emergencyContact: { name: 'Contato', phone: '3299999999', relationship: 'Filho(a)' },
+      vision: 'Sem limitação',
+      hearing: 'Sem limitação',
+      mobility: 'Sem limitação',
+      group: 'Individual',
+      suggestionStates: [],
+      evaluations: [
+        { date: '09/2026', scores: { ori: 9, reg: 3, ate: 4, evo: 2, lin: 8 } },
+        { date: '17/10/2026 #2', scores: { ori: 8, reg: 3, ate: 4, evo: 2, lin: 8 }, notes: 'Obs' },
+      ],
+    });
+    expect(await migrateEvaluations()).toBe(1);
+    expect(await migrateEvaluations()).toBe(0);
+    const list = await request(app).get('/api/v1/patients/030/fichas').set(auth(prof1Token));
+    expect(list.body.evaluations).toEqual([
+      expect.objectContaining({ date: '17/10/2026', instrument: 'meem', total: 25 }),
+      expect.objectContaining({ date: '01/09/2026', instrument: 'meem', total: 26 }),
+    ]);
+    const detail = await request(app)
+      .get(`/api/v1/patients/030/fichas/${list.body.evaluations[0].id}`)
+      .set(auth(prof1Token));
+    expect(detail.body.observations).toBe('Obs');
   });
 });

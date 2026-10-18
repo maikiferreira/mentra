@@ -80,7 +80,7 @@ export function HomePage() {
                     </span>
                     <Link
                       className="btn small"
-                      to={`/pacientes/${item.patientId}${item.targetTab === 'evolucao' ? '/evolucao' : ''}`}
+                      to={`/pacientes/${item.patientId}${item.targetTab === 'fichas' ? '' : `/${item.targetTab}`}`}
                     >
                       {item.button}
                     </Link>

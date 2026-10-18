@@ -11,6 +11,9 @@ import { AdminOnly } from './pages/UsersPage';
 import { EvolutionPage } from './pages/patient/EvolutionPage';
 import { PatientDataPage } from './pages/patient/PatientDataPage';
 import { PatientFichas } from './pages/patient/PatientFichas';
+import { OverviewPage } from './pages/patient/OverviewPage';
+import { PrintRoutinePage } from './pages/patient/PrintRoutinePage';
+import { ReportPage } from './pages/patient/ReportPage';
 import { PatientFrame } from './pages/patient/PatientFrame';
 
 function RouterContent() {
@@ -57,9 +60,12 @@ function RouterContent() {
         <Route path="/" element={<HomePage />} />
         <Route path="/pacientes" element={<PatientList />} />
         <Route path="/pacientes/novo" element={<PatientFormPage />} />
+        <Route path="/pacientes/:id/relatorio" element={<ReportPage />} />
+        <Route path="/pacientes/:id/rotina" element={<PrintRoutinePage />} />
         <Route path="/pacientes/:id/editar" element={<PatientFormPage editing />} />
         <Route path="/pacientes/:id" element={<PatientFrame />}>
           <Route index element={<PatientFichas />} />
+          <Route path="visao-geral" element={<OverviewPage />} />
           <Route path="evolucao" element={<EvolutionPage />} />
           <Route path="dados" element={<PatientDataPage />} />
         </Route>

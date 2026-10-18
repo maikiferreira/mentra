@@ -296,6 +296,301 @@ describe('UI fase 5 — regras RN', () => {
     expect(submitted).toMatchObject({ instrument: 'gds', scores: { q1: 1, q15: 1 } });
   });
 
+  it('RN-FIC-06: mostra a ficha salva item a item, edita e exclui com confirmação', async () => {
+    const gdsScores = Object.fromEntries([...Array(15)].map((_, index) => [`q${index + 1}`, 1]));
+    const summary = {
+      id: 'f1',
+      date: '10/10/2026',
+      dateISO: '2026-10-10',
+      instrument: 'gds',
+      instrumentName: 'GDS-15',
+      total: 10,
+      max: 15,
+      level: 'attention',
+      interpretation: '5 ou mais: indicativo de sintomas depressivos.',
+      status: 'Registrada',
+    };
+    const requests: Array<{ method: string; route: string; body?: unknown }> = [];
+    let deleted = false;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const route = new URL(String(input)).pathname.replace('/api/v1', '');
+      const method = init?.method ?? 'GET';
+      if (method !== 'GET')
+        requests.push({
+          method,
+          route,
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        });
+      if (route === '/patients/014/fichas')
+        return response({ evaluations: deleted ? [] : [summary] });
+      if (route === '/patients/014/fichas/f1' && method === 'PUT')
+        return response({ evaluation: { ...summary, date: '09/10/2026', total: 9 } });
+      if (route === '/patients/014/fichas/f1' && method === 'DELETE') {
+        deleted = true;
+        return response(undefined, 204);
+      }
+      if (route === '/patients/014/fichas/f1')
+        return response({
+          ...summary,
+          scores: gdsScores,
+          observations: 'Chorou ao falar da filha.',
+        });
+      return authFetch(String(input));
+    });
+    useUIStore.getState().setSession({ token: 'token', user });
+    const actor = userEvent.setup();
+    mount('/pacientes/014');
+    await actor.click(
+      await screen.findByRole('button', { name: 'Ver ficha de GDS-15 de 10/10/2026' }),
+    );
+    expect(
+      await screen.findByRole('heading', { name: 'Ficha · GDS-15 · 10/10/2026' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Chorou ao falar da filha.')).toBeInTheDocument();
+    const firstRow = screen.getByRole('row', { name: /Você está satisfeito com a sua vida\?/ });
+    expect(within(firstRow).getByText('Sim')).toBeInTheDocument();
+    // "Sim" na pergunta 2 pontua (resposta em negrito); na pergunta 1, não.
+    expect(within(firstRow).queryByText('pontua')).not.toBeInTheDocument();
+    const secondRow = screen.getByRole('row', { name: /deixou de lado/ });
+    expect(within(secondRow).getByText('pontua')).toBeInTheDocument();
+
+    await actor.click(screen.getByRole('button', { name: 'Editar ficha' }));
+    expect(screen.getByRole('heading', { name: 'Editar ficha · GDS-15' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Trocar teste' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Data da avaliação')).toHaveValue('2026-10-10');
+    expect(screen.getByLabelText('Observações')).toHaveValue('Chorou ao falar da filha.');
+    expect(screen.getByRole('status')).toHaveTextContent('Total: 10/15');
+    const question2 = screen.getAllByRole('group')[1]!;
+    await actor.click(within(question2).getByLabelText('Não'));
+    expect(screen.getByRole('status')).toHaveTextContent('Total: 9/15');
+    fireEvent.change(screen.getByLabelText('Data da avaliação'), {
+      target: { value: '2026-10-09' },
+    });
+    await actor.click(screen.getByRole('button', { name: 'Salvar alterações' }));
+    expect(
+      await screen.findByText(
+        'Ficha de 09/10/2026 atualizada. A evolução e as sugestões foram recalculadas.',
+      ),
+    ).toBeInTheDocument();
+    expect(requests[0]).toMatchObject({
+      method: 'PUT',
+      route: '/patients/014/fichas/f1',
+      body: { date: '2026-10-09', scores: { ...gdsScores, q2: 0 } },
+    });
+
+    await actor.click(await screen.findByRole('button', { name: 'Excluir ficha' }));
+    await actor.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(requests).toHaveLength(1);
+    await actor.click(screen.getByRole('button', { name: 'Excluir ficha' }));
+    await actor.click(screen.getByRole('button', { name: 'Sim, excluir ficha' }));
+    expect(await screen.findByText('Nenhuma ficha registrada ainda.')).toBeInTheDocument();
+    expect(requests[1]).toMatchObject({ method: 'DELETE', route: '/patients/014/fichas/f1' });
+  });
+
+  it('RN-VIS-01..03: visão geral mostra áreas, alertas cruzados e abre a ficha do teste não aplicado', async () => {
+    const status = (key: string, shortName: string, latest: unknown, extra = {}) => ({
+      key,
+      name: shortName,
+      shortName,
+      latest,
+      trend: { kind: latest ? 'first' : 'none', label: '', delta: null, tone: 'neutral' },
+      nextDue: latest ? '2026-12-10' : null,
+      overdue: false,
+      ...extra,
+    });
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const route = new URL(String(input)).pathname.replace('/api/v1', '');
+      if (route === '/patients/014/overview')
+        return response({
+          categories: [
+            {
+              key: 'cognicao',
+              name: 'Cognição',
+              instruments: [
+                status('meem', 'MEEM', {
+                  total: 21,
+                  max: 30,
+                  level: 'attention',
+                  label: 'Abaixo da nota de corte.',
+                  date: '10/09/2026',
+                  dateISO: '2026-09-10',
+                }),
+                status('moca', 'MoCA', null),
+              ],
+            },
+            {
+              key: 'humor',
+              name: 'Humor',
+              instruments: [
+                status(
+                  'gds',
+                  'GDS-15',
+                  {
+                    total: 7,
+                    max: 15,
+                    level: 'attention',
+                    label: 'Sintomas.',
+                    date: '10/03/2026',
+                    dateISO: '2026-03-10',
+                  },
+                  { nextDue: '2026-06-10', overdue: true },
+                ),
+              ],
+            },
+            { key: 'funcionalidade', name: 'Funcionalidade', instruments: [] },
+          ],
+          alerts: [
+            {
+              key: 'humor-cognicao',
+              level: 'attention',
+              title: 'Humor alterado junto com a cognição',
+              text: 'GDS-15 indica sintomas.',
+              instruments: ['gds', 'meem'],
+            },
+          ],
+        });
+      return authFetch(String(input));
+    });
+    useUIStore.getState().setSession({ token: 'token', user });
+    const actor = userEvent.setup();
+    mount('/pacientes/014/visao-geral');
+    expect(await screen.findByText(/Humor alterado junto com a cognição/)).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Visão geral' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    const humor = screen.getByRole('region', { name: 'Humor' });
+    expect(within(humor).getByText('Reavaliação atrasada desde 10/06/2026')).toBeInTheDocument();
+    expect(screen.getByText('Reavaliar em 10/12/2026')).toBeInTheDocument();
+    await actor.click(screen.getByRole('link', { name: 'Registrar MoCA' }));
+    expect(await screen.findByRole('heading', { name: 'Nova ficha · MoCA' })).toBeInTheDocument();
+  });
+
+  it('RN-ROT-01..03: marca a semana na rotina, mostra a adesão e gera a versão para imprimir', async () => {
+    const marks: unknown[] = [];
+    let done = false;
+    const routineItem = () => ({
+      key: '014:gds:prazer',
+      instrument: 'gds',
+      title: 'Agenda de atividades prazerosas',
+      text: 'Montar com a pessoa uma lista de atividades.',
+      duration: '20 min',
+      frequency: 'diariamente',
+      weeks: [
+        { week: '2026-10-05', done: true },
+        { week: '2026-10-12', done },
+      ],
+      adherence: done ? 1 : 0.5,
+    });
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const route = decodeURIComponent(new URL(String(input)).pathname.replace('/api/v1', ''));
+      if (route === '/routines')
+        return response({
+          items: [{ patientId: '014', initials: 'M.S.', age: 78, activities: [routineItem()] }],
+        });
+      if (route === '/patients/014/routine/014:gds:prazer/weeks/2026-10-12') {
+        marks.push(JSON.parse(String(init?.body)));
+        done = true;
+        return response({});
+      }
+      if (route === '/patients/014/evolution')
+        return response({
+          instruments: [],
+          latestInstrument: null,
+          suggestions: [],
+          routine: [routineItem()],
+        });
+      return authFetch(String(input));
+    });
+    useUIStore.getState().setSession({ token: 'token', user });
+    const actor = userEvent.setup();
+    mount('/rotinas');
+    expect(await screen.findByText('Adesão: 50% (1/2 semanas)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Semana de 05/10/2026: feita' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await actor.click(screen.getByLabelText('Feita nesta semana'));
+    expect(await screen.findByText('Adesão: 100% (2/2 semanas)')).toBeInTheDocument();
+    expect(marks).toEqual([{ done: true }]);
+
+    await actor.click(screen.getByRole('link', { name: 'Imprimir rotina' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Rotina de atividades' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Agenda de atividades prazerosas')).toBeInTheDocument();
+    expect(screen.getAllByLabelText(/marcar quando fizer/)).toHaveLength(7);
+    expect(screen.getByRole('button', { name: 'Imprimir' })).toBeInTheDocument();
+  });
+
+  it('RN-REL-01: relatório reúne resumo por área, integração, evolução e rotina', async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const route = new URL(String(input)).pathname.replace('/api/v1', '');
+      if (route === '/patients/014/overview')
+        return response({
+          categories: [
+            {
+              key: 'humor',
+              name: 'Humor',
+              instruments: [
+                {
+                  key: 'gds',
+                  shortName: 'GDS-15',
+                  latest: {
+                    total: 7,
+                    max: 15,
+                    level: 'attention',
+                    label: '5 ou mais: indicativo de sintomas depressivos.',
+                    date: '10/09/2026',
+                    dateISO: '2026-09-10',
+                    observations: 'Relata desânimo.',
+                  },
+                  trend: { kind: 'first', label: '', delta: null, tone: 'neutral' },
+                  nextDue: '2026-12-10',
+                  overdue: false,
+                },
+              ],
+            },
+          ],
+          alerts: [
+            {
+              key: 'x',
+              level: 'attention',
+              title: 'Humor alterado',
+              text: 'Detalhe.',
+              instruments: [],
+            },
+          ],
+        });
+      if (route === '/patients/014/evolution')
+        return response({
+          instruments: [
+            {
+              ...meemEvolution([{ date: '10/09/2026', total: 7 }]),
+              key: 'gds',
+              name: 'Escala de Depressão Geriátrica (GDS-15)',
+              shortName: 'GDS-15',
+              max: 15,
+            },
+          ],
+          latestInstrument: 'gds',
+          suggestions: [],
+          routine: [],
+        });
+      return authFetch(String(input));
+    });
+    useUIStore.getState().setSession({ token: 'token', user });
+    mount('/pacientes/014/relatorio');
+    expect(await screen.findByRole('heading', { name: 'Resumo por área' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('row', { name: /Humor GDS-15 10\/09\/2026 7\/15 Atenção/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Humor alterado\./)).toBeInTheDocument();
+    expect(screen.getByText('Observações da última ficha: Relata desânimo.')).toBeInTheDocument();
+    expect(screen.getByText('Nenhuma atividade na rotina até o momento.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Imprimir ou salvar em PDF' })).toBeInTheDocument();
+  });
+
   it('RN-AUTH-03: cadastro profissional autentica e redireciona para Início', async () => {
     vi.mocked(fetch).mockImplementation(async (input) => {
       const route = new URL(String(input)).pathname.replace('/api/v1', '');

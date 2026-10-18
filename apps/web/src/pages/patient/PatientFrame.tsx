@@ -16,7 +16,9 @@ export function PatientFrame() {
     ? 'evol'
     : location.pathname.endsWith('/dados')
       ? 'dados'
-      : 'fichas';
+      : location.pathname.endsWith('/visao-geral')
+        ? 'geral'
+        : 'fichas';
   if (query.isLoading) return <Loading />;
   if (query.error)
     return (
@@ -58,6 +60,14 @@ export function PatientFrame() {
           to={`/pacientes/${id}`}
         >
           Fichas
+        </Link>
+        <Link
+          className="tab"
+          role="tab"
+          aria-selected={section === 'geral'}
+          to={`/pacientes/${id}/visao-geral`}
+        >
+          Visão geral
         </Link>
         <Link
           className="tab"

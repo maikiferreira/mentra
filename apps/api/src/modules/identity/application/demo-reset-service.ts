@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { SEED_PATIENTS, SEED_USERS } from '../../../seed-data.js';
+import { SEED_PATIENTS, SEED_USERS, seedPatientDocument } from '../../../seed-data.js';
 import { LeadModel, PatientModel, UserModel } from '../../shared/infra/models.js';
 
 export async function resetDemoDatabase() {
@@ -17,10 +17,5 @@ export async function resetDemoDatabase() {
       passwordHash: await bcrypt.hash(user.password, 12),
     });
   }
-  await PatientModel.insertMany(
-    SEED_PATIENTS.map((patient) => ({
-      ...patient,
-      suggestionStates: [],
-    })),
-  );
+  await PatientModel.insertMany(SEED_PATIENTS.map(seedPatientDocument));
 }

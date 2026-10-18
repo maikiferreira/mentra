@@ -1,24 +1,16 @@
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getInstrument } from '@mente-ativa/shared';
-import { type Evolution } from '../api';
+import { getInstrument, type RoutinesDto } from '@mente-ativa/shared';
 import { useUIStore } from '../ui-store';
 import { ErrorNote, Loading } from '../components/Feedback';
 import { client } from '../lib/client';
+import { RoutineTracker } from '../components/RoutineTracker';
 
 export function RoutinesPage() {
   const session = useUIStore((state) => state.session)!;
   const query = useQuery({
     queryKey: ['routines', session.user.username],
-    queryFn: () =>
-      client<{
-        items: Array<{
-          patientId: string;
-          initials: string;
-          age: number;
-          activities: Evolution['routine'];
-        }>;
-      }>('/routines'),
+    queryFn: () => client<RoutinesDto>('/routines'),
   });
   if (query.isLoading) return <Loading />;
   if (query.error) return <ErrorNote error={query.error} />;
@@ -28,8 +20,8 @@ export function RoutinesPage() {
       <div className="head">
         <h1>Rotinas</h1>
         <p className="muted">
-          Atividades aceitas pelo profissional, por paciente. Aceite sugestões na aba Evolução e
-          sugestões de cada paciente.
+          Atividades aceitas pelo profissional, por paciente. Marque as atividades feitas a cada
+          semana para acompanhar a adesão e imprima a rotina para o cuidador.
         </p>
       </div>
       {items.length ? (
@@ -40,9 +32,14 @@ export function RoutinesPage() {
                 <h2>
                   {patient.patientId} · {patient.initials}, {patient.age} anos
                 </h2>
-                <Link className="btn small" to={`/pacientes/${patient.patientId}/evolucao`}>
-                  Abrir paciente
-                </Link>
+                <span className="actions">
+                  <Link className="btn small" to={`/pacientes/${patient.patientId}/rotina`}>
+                    Imprimir rotina
+                  </Link>
+                  <Link className="btn small" to={`/pacientes/${patient.patientId}/evolucao`}>
+                    Abrir paciente
+                  </Link>
+                </span>
               </div>
               <ul className="routine" style={{ marginTop: 8 }}>
                 {patient.activities.map((activity) => (
@@ -52,6 +49,7 @@ export function RoutinesPage() {
                       <span className="chip">{getInstrument(activity.instrument)?.shortName}</span>
                       <br />
                       <span className="muted">{activity.text}</span>
+                      <RoutineTracker patientId={patient.patientId} item={activity} />
                     </span>
                     <span className="muted" style={{ whiteSpace: 'nowrap' }}>
                       {activity.duration} · {activity.frequency}

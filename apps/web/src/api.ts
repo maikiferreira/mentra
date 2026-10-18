@@ -1,142 +1,21 @@
-import type {
-  InstrumentCategory,
-  InstrumentKey,
-  InstrumentResult,
-  TrendResult,
-} from '@mente-ativa/shared';
-
 const API_BASE =
   (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL ??
   'http://localhost:3000/api/v1';
 
-export interface AuthUser {
-  username: string;
-  name: string;
-  role: 'admin' | 'professional';
-}
-export interface Session {
-  token: string;
-  user: AuthUser;
-}
-export interface PatientSummary {
-  id: string;
-  initials: string;
-  age: number;
-  group: string;
-  responsibleUsername: string;
-  responsibleName?: string;
-  lastEvaluationDate: string | null;
-  lastResult: {
-    instrument: InstrumentKey;
-    instrumentName: string;
-    total: number;
-    max: number | null;
-    level: InstrumentResult['level'];
-  } | null;
-  trend: TrendResult;
-}
-export interface Patient {
-  id: string;
-  initials: string;
-  age: number;
-  educationYears: number | null;
-  interests: string;
-  phone: string;
-  address: string;
-  emergencyContact: { name: string; phone: string; relationship: string };
-  vision: string;
-  hearing: string;
-  mobility: string;
-  group: string;
-  objective: string;
-  responsibleUsername: string;
-  responsibleName: string;
-  evaluationCount: number;
-}
-export interface Evaluation {
-  date: string;
-  instrument: InstrumentKey;
-  instrumentName: string;
-  total: number;
-  max: number | null;
-  level: InstrumentResult['level'];
-  interpretation: string;
-  status: string;
-}
-export interface Suggestion {
-  key: string;
-  instrument: InstrumentKey;
-  title: string;
-  defaultText: string;
-  duration: string;
-  frequency: string;
-  why: string;
-  sources: string[];
-  fell: boolean;
-  lastDate: string | null;
-  interests: string;
-  state: { status: 'open' | 'ok' | 'no'; customText: string | null };
-}
-export interface RoutineItem {
-  key: string;
-  instrument: InstrumentKey;
-  title: string;
-  text: string;
-  duration: string;
-  frequency: string;
-}
-export interface InstrumentEvolution {
-  key: InstrumentKey;
-  name: string;
-  shortName: string;
-  category: InstrumentCategory;
-  max: number | null;
-  higherIsBetter: boolean;
-  totalLabel: string;
-  series: Array<{ date: string; total: number }>;
-  latest: InstrumentResult & { date: string };
-  trend: TrendResult;
-  delta?: {
-    previousDate: string;
-    lastDate: string;
-    rows: Array<{
-      key: string;
-      name: string;
-      previous: number;
-      last: number;
-      max: number | null;
-      kind: 'up' | 'down' | 'same';
-      tone: TrendResult['tone'];
-      label: string;
-    }>;
-  };
-}
-export interface Evolution {
-  instruments: InstrumentEvolution[];
-  latestInstrument: InstrumentKey | null;
-  suggestions: Suggestion[];
-  routine: RoutineItem[];
-}
-export interface Dashboard {
-  greetingName: string;
-  kpis: {
-    patients: number;
-    professionals?: number;
-    recentDrops: number;
-    routineActivities: number;
-  };
-  todo: Array<{
-    patientId: string;
-    initials: string;
-    age: number;
-    kind: string;
-    text: string;
-    tag: string;
-    tagStyle: string;
-    button: string;
-    targetTab: 'fichas' | 'evolucao';
-  }>;
-}
+export type {
+  AuthUserDto as AuthUser,
+  SessionDto as Session,
+  PatientSummaryDto as PatientSummary,
+  PatientDto as Patient,
+  EvaluationSummaryDto as Evaluation,
+  FichaDetailDto as FichaDetail,
+  SuggestionDto as Suggestion,
+  RoutineItemDto as RoutineItem,
+  InstrumentEvolutionDto as InstrumentEvolution,
+  EvolutionDto as Evolution,
+  DashboardDto as Dashboard,
+} from '@mente-ativa/shared';
+
 export interface ApiError extends Error {
   status: number;
   code?: string;

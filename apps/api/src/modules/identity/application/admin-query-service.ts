@@ -1,7 +1,8 @@
+import type { LeadsDto, UsersDto } from '@mente-ativa/shared';
 import { PatientModel, LeadModel, UserModel } from '../../shared/infra/models.js';
 
 export class AdminQueryService {
-  async users() {
+  async users(): Promise<UsersDto> {
     const [users, counts] = await Promise.all([
       UserModel.find({}, { username: 1, name: 1, role: 1 }).sort({ _id: 1 }).lean(),
       PatientModel.aggregate<{ _id: string; count: number }>([
@@ -19,7 +20,7 @@ export class AdminQueryService {
     };
   }
 
-  async leads() {
+  async leads(): Promise<LeadsDto> {
     const leads = await LeadModel.find().sort({ createdAt: -1, _id: -1 }).lean();
     return {
       items: leads.map((lead) => ({

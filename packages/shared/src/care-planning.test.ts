@@ -2,12 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   calculateDomainFlags,
   calculateTrend,
-  evaluationDateKey,
   firstNameUsername,
   generateSuggestions,
   nextPatientCode,
   totalScore,
-  uniqueDate,
   uniqueUsername,
   type Evaluation,
   type MeemScores,
@@ -104,20 +102,6 @@ describe('domínio puro do planejamento e utilitários', () => {
       fell: true,
       lastDate: '17/10/2026',
     });
-  });
-
-  it('RN-FIC-01: ordena datas completas e datas só com mês/ano', () => {
-    expect(evaluationDateKey('17/10/2026')).toBe(20261017);
-    expect(evaluationDateKey('17/10/2026 #2')).toBe(20261017);
-    expect(evaluationDateKey('09/2026')).toBe(20260901);
-    expect(evaluationDateKey('data inválida')).toBeNull();
-  });
-
-  it('RN-FIC-01: garante data única com sufixos crescentes', () => {
-    expect(uniqueDate([], '17/10/2026')).toBe('17/10/2026');
-    expect(uniqueDate([{ date: '17/10/2026' }, { date: '17/10/2026 #2' }], '17/10/2026')).toBe(
-      '17/10/2026 #3',
-    );
   });
 
   it('RN-PAT-03: gera código sequencial de três dígitos após o maior código', () => {
