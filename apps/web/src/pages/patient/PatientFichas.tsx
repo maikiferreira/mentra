@@ -1,0 +1,88 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { type Evaluation } from '../../api';
+import { useUIStore } from '../../ui-store';
+import { ErrorNote, Loading } from '../../components/Feedback';
+import { client, shortDate } from '../../lib/client';
+import { LEVEL_CHIP, LEVEL_NAME, scoreText } from '../../lib/format';
+import { usePatientContext } from './context';
+import { NewFicha } from './fichas/NewFicha';
+
+export function PatientFichas() {
+  const { id, patient } = usePatientContext();
+  const [formOpen, setFormOpen] = useState(false);
+  const justRegistered = useUIStore((state) => state.justRegistered[id]);
+  const fichasQuery = useQuery({
+    queryKey: ['fichas', id],
+    queryFn: () => client<{ evaluations: Evaluation[] }>(`/patients/${id}/fichas`),
+  });
+  if (fichasQuery.isLoading) return <Loading />;
+  if (fichasQuery.error) return <ErrorNote error={fichasQuery.error} />;
+  const evaluations = fichasQuery.data?.evaluations ?? [];
+  return (
+    <div className="stack">
+      {justRegistered && (
+        <div className="note ok">
+          Ficha de {shortDate(justRegistered)} registrada. A evolução e as sugestões foram
+          atualizadas.
+        </div>
+      )}
+      <div className="panel">
+        <h2>Fichas deste paciente</h2>
+        {evaluations.length ? (
+          <div className="tblwrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Teste</th>
+                  <th className="num">Resultado</th>
+                  <th>Interpretação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {evaluations.map((evaluation) => (
+                  <tr key={`${evaluation.instrument}-${evaluation.date}`}>
+                    <td>{evaluation.date}</td>
+                    <td>{evaluation.instrumentName}</td>
+                    <td className="num">{scoreText(evaluation.total, evaluation.max)}</td>
+                    <td>
+                      <span className={`chip ${LEVEL_CHIP[evaluation.level]}`}>
+                        {LEVEL_NAME[evaluation.level]}
+                      </span>{' '}
+                      <span className="muted interp">{evaluation.interpretation}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="muted">Nenhuma ficha registrada ainda.</p>
+        )}
+      </div>
+      {formOpen ? (
+        <NewFicha patient={patient} id={id} onCancel={() => setFormOpen(false)} />
+      ) : (
+        <div className="drop">
+          <h3>Registrar nova ficha</h3>
+          <p className="muted">
+            Testes de cognição (MEEM, MoCA, Relógio, Fluência verbal), humor (GDS-15, Ansiedade
+            geriátrica) e funcionalidade (Pfeffer, Katz, CDR).
+          </p>
+          <div>
+            <button className="btn primary" onClick={() => setFormOpen(true)}>
+              Registrar nova ficha
+            </button>
+          </div>
+        </div>
+      )}
+      {evaluations.length > 0 && (
+        <Link className="btn" to={`/pacientes/${id}/evolucao`}>
+          Ver evolução e sugestões
+        </Link>
+      )}
+    </div>
+  );
+}
