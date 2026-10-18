@@ -313,6 +313,7 @@ describe('UI fase 5 — regras RN', () => {
     const actor = userEvent.setup();
     mount('/cadastro');
     await actor.type(screen.getByLabelText('Nome'), 'Profissional 1');
+    await actor.type(screen.getByLabelText('E-mail'), 'prof1@exemplo.com');
     await actor.type(screen.getByLabelText('Usuário'), 'prof1');
     await actor.type(screen.getByLabelText('Senha'), 'prof1');
     await actor.type(screen.getByLabelText('Confirmar senha'), 'prof1');

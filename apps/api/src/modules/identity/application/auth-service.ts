@@ -1,13 +1,15 @@
 import bcrypt from 'bcryptjs';
-import { TRIAL_PROFILES, firstNameUsername, uniqueUsername } from '@mente-ativa/shared';
+import { TRIAL_DAYS, TRIAL_PROFILES, firstNameUsername, uniqueUsername } from '@mente-ativa/shared';
 import { z } from 'zod';
 import { ApiError, conflict, validationError } from '../../shared/kernel/errors.js';
 import { LeadModel, UserModel } from '../../shared/infra/models.js';
-import { createToken, type AuthUser } from '../../shared/presentation/http.js';
+import { createToken, type AuthUser, type RequestAccess } from '../../shared/presentation/http.js';
 
 const credentialsSchema = z.object({ username: z.string(), password: z.string() });
 const objectSchema = z.record(z.string(), z.unknown());
 const stringSchema = z.string();
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function publicUser(user: {
   username: string;
@@ -38,10 +40,12 @@ export class AuthService {
       return value.success ? value.data : '';
     };
     const name = stringField('name').trim();
+    const email = stringField('email').trim().toLowerCase();
     const username = stringField('username').trim().toLowerCase();
     const password = stringField('password');
     const passwordConfirmation = stringField('passwordConfirmation');
     if (!name) throw validationError('Informe seu nome.', 'name');
+    if (!EMAIL_PATTERN.test(email)) throw validationError('Informe um e-mail válido.', 'email');
     if (!/^[a-z0-9._-]{3,}$/.test(username)) {
       throw validationError(
         'O usuário deve ter ao menos 3 caracteres, só letras, números, ponto, hífen ou sublinhado.',
@@ -58,6 +62,7 @@ export class AuthService {
       const user = await UserModel.create({
         username,
         name,
+        email,
         role: 'professional',
         passwordHash: await bcrypt.hash(password, 12),
         origin: 'signup',
@@ -84,8 +89,7 @@ export class AuthService {
     if (!name) throw validationError('Informe seu nome.', 'name');
     if (phone.replace(/\D/g, '').length < 8)
       throw validationError('Informe um telefone com DDD.', 'phone');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-      throw validationError('Informe um e-mail válido.', 'email');
+    if (!EMAIL_PATTERN.test(email)) throw validationError('Informe um e-mail válido.', 'email');
     if (data.consent !== true)
       throw validationError('Marque a autorização para receber o contato.', 'consent');
     const submittedProfile = data.profile === undefined ? TRIAL_PROFILES[0] : data.profile;
@@ -121,9 +125,12 @@ export class AuthService {
         user = await UserModel.create({
           username,
           name,
+          email: email.toLowerCase(),
           role: 'professional',
           passwordHash: await bcrypt.hash(password, 12),
           origin: 'trial',
+          // RN-PAY-03: 7 dias grátis, sem cartão, a partir do pedido de teste.
+          trialEndsAt: new Date(createdAt.getTime() + TRIAL_DAYS * DAY_MS),
         });
       } catch (error) {
         await LeadModel.deleteOne({ _id: lead._id });
@@ -138,10 +145,18 @@ export class AuthService {
     }
   }
 
-  async me(username: string) {
+  async me(username: string, access: RequestAccess) {
     const user = await UserModel.findOne({ username }).lean();
     if (!user) throw new ApiError(401, 'UNAUTHORIZED', 'Sessão inválida ou expirada.');
-    return { user: publicUser(user) };
+    return {
+      user: publicUser(user),
+      access: {
+        hasAccess: access.hasAccess,
+        reason: access.reason,
+        trialEndsAt: access.trialEndsAt,
+        status: access.status,
+      },
+    };
   }
 }
 

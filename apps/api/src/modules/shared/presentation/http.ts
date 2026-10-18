@@ -1,7 +1,9 @@
 import type { ErrorRequestHandler, Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { ApiError } from '../kernel/errors.js';
-import { UserModel } from '../infra/models.js';
+import type { SubscriptionStatus } from '@mente-ativa/shared';
+import { ApiError, subscriptionRequired } from '../kernel/errors.js';
+import { SubscriptionModel, UserModel } from '../infra/models.js';
+import { hasActiveAccess, type AccessDecision } from '../../billing/domain/access-policy.js';
 
 export interface AuthUser {
   username: string;
@@ -22,32 +24,83 @@ export function createToken(user: AuthUser) {
   return jwt.sign({ sub: user.username, role: user.role }, secret(), { expiresIn: '8h' });
 }
 
-export async function requireAuth(request: Request, _response: Response, next: NextFunction) {
+export interface RequestAccess extends AccessDecision {
+  trialEndsAt: string | null;
+  status: SubscriptionStatus | null;
+}
+const requestAccess = new WeakMap<Request, RequestAccess>();
+
+export function getRequestAccess(request: Request): RequestAccess {
+  const access = requestAccess.get(request);
+  if (!access) throw new ApiError(401, 'UNAUTHORIZED', 'Autenticação necessária.');
+  return access;
+}
+
+async function authenticate(request: Request, enforceSubscription: boolean) {
   const header = request.header('authorization');
   const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-  if (!token) return next(new ApiError(401, 'UNAUTHORIZED', 'Autenticação necessária.'));
+  if (!token) throw new ApiError(401, 'UNAUTHORIZED', 'Autenticação necessária.');
+  let payload: jwt.JwtPayload;
   try {
-    const payload = jwt.verify(token, secret());
+    const verified = jwt.verify(token, secret());
     if (
-      typeof payload === 'string' ||
-      typeof payload.sub !== 'string' ||
-      !['admin', 'professional'].includes(String(payload.role))
+      typeof verified === 'string' ||
+      typeof verified.sub !== 'string' ||
+      !['admin', 'professional'].includes(String(verified.role))
     ) {
       throw new Error('Invalid token payload');
     }
-    const user = await UserModel.findOne(
-      { username: payload.sub },
-      { username: 1, name: 1, role: 1 },
-    ).lean();
-    if (!user) return next(new ApiError(401, 'UNAUTHORIZED', 'Sessão inválida ou expirada.'));
-    authenticatedUsers.set(request, {
-      username: user.username,
-      name: user.name,
-      role: payload.role as AuthUser['role'],
-    });
-    return next();
+    payload = verified;
   } catch {
-    return next(new ApiError(401, 'UNAUTHORIZED', 'Sessão inválida ou expirada.'));
+    throw new ApiError(401, 'UNAUTHORIZED', 'Sessão inválida ou expirada.');
+  }
+  const [user, subscription] = await Promise.all([
+    UserModel.findOne(
+      { username: payload.sub },
+      { username: 1, name: 1, role: 1, origin: 1, trialEndsAt: 1 },
+    ).lean(),
+    SubscriptionModel.findOne(
+      { username: payload.sub },
+      { status: 1, currentPeriodEnd: 1, pastDueSince: 1 },
+    ).lean(),
+  ]);
+  if (!user) throw new ApiError(401, 'UNAUTHORIZED', 'Sessão inválida ou expirada.');
+  // RN-PAY-05/06: o acesso é recalculado a cada requisição a partir do banco.
+  const decision = hasActiveAccess(user, subscription, new Date());
+  if (enforceSubscription && !decision.hasAccess) throw subscriptionRequired();
+  authenticatedUsers.set(request, {
+    username: user.username,
+    name: user.name,
+    role: payload.role as AuthUser['role'],
+  });
+  requestAccess.set(request, {
+    ...decision,
+    trialEndsAt: user.trialEndsAt?.toISOString() ?? null,
+    status: subscription?.status ?? null,
+  });
+}
+
+/** Exige sessão válida e acesso (isento, trial ou assinatura); sem acesso responde 402. */
+export async function requireAuth(request: Request, _response: Response, next: NextFunction) {
+  try {
+    await authenticate(request, true);
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/** Exige só a sessão: usado em /auth/me e /billing/*, que quem precisa assinar ainda acessa. */
+export async function requireAuthAllowUnpaid(
+  request: Request,
+  _response: Response,
+  next: NextFunction,
+) {
+  try {
+    await authenticate(request, false);
+    return next();
+  } catch (error) {
+    return next(error);
   }
 }
 

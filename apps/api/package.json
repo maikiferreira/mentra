@@ -10,7 +10,8 @@
     "seed": "tsx src/seed.ts",
     "test": "vitest run --config ../../vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "create-admin": "tsx src/create-admin.ts"
+    "create-admin": "tsx src/create-admin.ts",
+    "migrate-billing": "tsx src/migrate-billing.ts"
   },
   "dependencies": {
     "@mente-ativa/shared": "*",
@@ -21,14 +22,17 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.19.3",
+    "nodemailer": "^10.1.2",
     "pino": "^9.7.0",
     "pino-http": "^10.5.0",
+    "stripe": "^23.0.0",
     "tsx": "^4.20.6",
     "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/express": "^5.0.5",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/nodemailer": "^8.0.2",
     "@types/supertest": "^6.0.3",
     "mongodb-memory-server": "^10.2.3",
     "supertest": "^7.1.4"

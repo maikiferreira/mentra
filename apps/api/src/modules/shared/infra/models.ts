@@ -7,6 +7,8 @@ const userSchema = new Schema(
     role: { type: String, enum: ['admin', 'professional'], required: true },
     passwordHash: { type: String, required: true, select: false },
     origin: { type: String, enum: ['seed', 'signup', 'trial'], required: true },
+    email: { type: String, lowercase: true, trim: true, index: true },
+    trialEndsAt: { type: Date },
   },
   { timestamps: true },
 );
@@ -70,9 +72,59 @@ const leadSchema = new Schema(
   { versionKey: false },
 );
 
+const planEnum = ['monthly', 'annual'];
+const subscriptionSchema = new Schema(
+  {
+    username: { type: String, required: true, unique: true },
+    email: { type: String, default: null },
+    // Os índices sparse permitem vários documentos ainda sem cliente/assinatura no Stripe.
+    stripeCustomerId: { type: String, unique: true, sparse: true },
+    stripeSubscriptionId: { type: String, unique: true, sparse: true },
+    plan: { type: String, enum: planEnum, default: null },
+    status: {
+      type: String,
+      enum: ['trialing', 'incomplete', 'active', 'past_due', 'canceled'],
+      default: 'incomplete',
+    },
+    startedAt: { type: Date, default: null },
+    currentPeriodEnd: { type: Date, default: null },
+    cancelAtPeriodEnd: { type: Boolean, default: false },
+    canceledAt: { type: Date, default: null },
+    // Início da inadimplência, base da carência (RN-PAY-06).
+    pastDueSince: { type: Date, default: null },
+    // Marcadores que garantem um único e-mail de liberação/cancelamento (RN-PAY-08/10).
+    activatedAt: { type: Date, default: null },
+    cancelNoticeSentAt: { type: Date, default: null },
+  },
+  { timestamps: true },
+);
+const paymentSchema = new Schema(
+  {
+    username: { type: String, required: true, index: true },
+    stripeInvoiceId: { type: String, required: true, unique: true },
+    amountCents: { type: Number, required: true },
+    currency: { type: String, required: true },
+    plan: { type: String, enum: planEnum, default: null },
+    status: { type: String, enum: ['paid', 'failed', 'refunded'], required: true },
+    paidAt: { type: Date, default: null, index: true },
+  },
+  { timestamps: true },
+);
+const processedStripeEventSchema = new Schema(
+  {
+    eventId: { type: String, required: true, unique: true },
+    type: { type: String, required: true },
+    processedAt: { type: Date, required: true, default: Date.now },
+  },
+  { versionKey: false },
+);
+
 export type UserRecord = InferSchemaType<typeof userSchema>;
 export type PatientRecord = InferSchemaType<typeof patientSchema>;
 export type LeadRecord = InferSchemaType<typeof leadSchema>;
+export type SubscriptionRecord = InferSchemaType<typeof subscriptionSchema>;
+export type PaymentRecord = InferSchemaType<typeof paymentSchema>;
+export type ProcessedStripeEventRecord = InferSchemaType<typeof processedStripeEventSchema>;
 export const UserModel =
   (mongoose.models.User as mongoose.Model<UserRecord> | undefined) ??
   mongoose.model<UserRecord>('User', userSchema);
@@ -82,3 +134,13 @@ export const PatientModel =
 export const LeadModel =
   (mongoose.models.Lead as mongoose.Model<LeadRecord> | undefined) ??
   mongoose.model<LeadRecord>('Lead', leadSchema);
+export const SubscriptionModel =
+  (mongoose.models.Subscription as mongoose.Model<SubscriptionRecord> | undefined) ??
+  mongoose.model<SubscriptionRecord>('Subscription', subscriptionSchema);
+export const PaymentModel =
+  (mongoose.models.Payment as mongoose.Model<PaymentRecord> | undefined) ??
+  mongoose.model<PaymentRecord>('Payment', paymentSchema);
+export const ProcessedStripeEventModel =
+  (mongoose.models.ProcessedStripeEvent as
+    mongoose.Model<ProcessedStripeEventRecord> | undefined) ??
+  mongoose.model<ProcessedStripeEventRecord>('ProcessedStripeEvent', processedStripeEventSchema);
