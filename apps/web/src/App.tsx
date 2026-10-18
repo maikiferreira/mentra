@@ -32,6 +32,7 @@ import logo from './assets/logo.jpg';
 import {
   api,
   jsonBody,
+  onSubscriptionRequired,
   type Dashboard,
   type Evaluation,
   type Evolution,
@@ -41,10 +42,13 @@ import {
   type Session,
   type Suggestion,
 } from './api';
+import { client } from './client';
 import { useUIStore } from './ui-store';
+import { PlansPage } from './pages/billing/PlansPage';
+import { CheckoutSuccessPage } from './pages/billing/CheckoutSuccessPage';
+import { SubscriptionSettingsPage } from './pages/billing/SubscriptionSettingsPage';
+import { TrialBanner } from './pages/billing/TrialBanner';
 
-const client = <T,>(path: string, options?: RequestInit): Promise<T> =>
-  api<T>(path, options, useUIStore.getState().session?.token);
 const dateBR = () =>
   new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 const shortDate = (date: string) => date.split(' ')[0];
@@ -135,9 +139,15 @@ function Protected() {
   const session = useUIStore((state) => state.session);
   const location = useLocation();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [location.pathname]);
+  useEffect(() => {
+    // RN-PAY-05: sem acesso válido, qualquer 402 da API leva à escolha de plano.
+    onSubscriptionRequired(() => navigate('/assinatura/planos', { replace: true }));
+    return () => onSubscriptionRequired(null);
+  }, [navigate]);
   useEffect(() => {
     if (!session) return;
     let active = true;
@@ -164,14 +174,19 @@ function AppShell({ children }: { children: ReactNode }) {
   const logout = useUIStore((state) => state.logout);
   const queryClient = useQueryClient();
   const location = useLocation();
+  const path = location.pathname;
   const active =
-    location.pathname === '/'
+    path === '/'
       ? 'home'
-      : location.pathname.startsWith('/pacientes')
+      : path.startsWith('/pacientes')
         ? 'list'
-        : location.pathname.startsWith('/rotinas')
+        : path.startsWith('/rotinas')
           ? 'routine'
-          : 'users';
+          : path.startsWith('/admin/assinaturas')
+            ? 'subscriptions'
+            : path.startsWith('/perfil/assinatura') || path.startsWith('/assinatura')
+              ? 'billing'
+              : 'users';
   const icon = {
     home: (
       <svg viewBox="0 0 24 24">
@@ -198,21 +213,36 @@ function AppShell({ children }: { children: ReactNode }) {
         <path d="M5 20c.8-4 3.6-6 7-6s6.2 2 7 6" />
       </svg>
     ),
+    billing: (
+      <svg viewBox="0 0 24 24">
+        <rect x="2.5" y="5" width="19" height="14" rx="2" />
+        <path d="M2.5 10h19M6.5 15h4" />
+      </svg>
+    ),
+    subscriptions: (
+      <svg viewBox="0 0 24 24">
+        <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+      </svg>
+    ),
   };
   const nav = [
     ['home', 'Início', '/'],
     ['list', 'Pacientes', '/pacientes'],
     ['routine', 'Rotinas', '/rotinas'],
   ] as const;
+  const extraNav =
+    session.user.role === 'admin'
+      ? ([
+          ['users', 'Usuários', '/usuarios'],
+          ['subscriptions', 'Assinaturas', '/admin/assinaturas'],
+        ] as const)
+      : ([['billing', 'Assinatura', '/perfil/assinatura']] as const);
   return (
     <div className="shell">
       <aside className="side">
         <Brand />
         <nav aria-label="Menu principal">
-          {[
-            ...nav,
-            ...(session.user.role === 'admin' ? [['users', 'Usuários', '/usuarios'] as const] : []),
-          ].map(([key, label, to]) => (
+          {[...nav, ...extraNav].map(([key, label, to]) => (
             <Link
               className="navb"
               key={key}
@@ -244,6 +274,7 @@ function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <div className="content">
+        {session.user.role !== 'admin' && <TrialBanner />}
         <main>{children}</main>
         <p className="principle">
           <b>A tecnologia sugere. O profissional decide.</b> As sugestões não são diagnóstico nem
@@ -1983,9 +2014,9 @@ function UsersPage() {
   );
 }
 
-function AdminOnly() {
+function AdminOnly({ children }: { children: ReactNode }) {
   const session = useUIStore((state) => state.session)!;
-  return session.user.role === 'admin' ? <UsersPage /> : <Navigate to="/" replace />;
+  return session.user.role === 'admin' ? <>{children}</> : <Navigate to="/" replace />;
 }
 
 function RouterContent() {
@@ -2039,7 +2070,17 @@ function RouterContent() {
           <Route path="dados" element={<PatientDataPage />} />
         </Route>
         <Route path="/rotinas" element={<RoutinesPage />} />
-        <Route path="/usuarios" element={<AdminOnly />} />
+        <Route
+          path="/usuarios"
+          element={
+            <AdminOnly>
+              <UsersPage />
+            </AdminOnly>
+          }
+        />
+        <Route path="/assinatura/planos" element={<PlansPage />} />
+        <Route path="/assinatura/sucesso" element={<CheckoutSuccessPage />} />
+        <Route path="/perfil/assinatura" element={<SubscriptionSettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to={session ? '/' : '/login'} replace />} />
     </Routes>

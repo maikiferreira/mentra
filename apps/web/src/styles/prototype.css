@@ -14,6 +14,8 @@
   --down-soft: #fbe3e7;
   --warn: #8a5200;
   --warn-soft: #fcefd2;
+  --lilac: #6b4fb8;
+  --lilac-soft: #ece6fa;
   --f-display: 'Bricolage Grotesque', system-ui, sans-serif;
   --f-body: 'Public Sans', system-ui, -apple-system, sans-serif;
 }
@@ -33,6 +35,8 @@
     --down-soft: #43202a;
     --warn: #f2b960;
     --warn-soft: #41300f;
+    --lilac: #c4b0ff;
+    --lilac-soft: #2e2547;
     color-scheme: dark;
   }
 }
@@ -51,6 +55,8 @@
   --down-soft: #43202a;
   --warn: #f2b960;
   --warn-soft: #41300f;
+  --lilac: #c4b0ff;
+  --lilac-soft: #2e2547;
   color-scheme: dark;
 }
 * {
@@ -972,5 +978,195 @@ th.num {
   * {
     transition: none !important;
     animation: none !important;
+  }
+}
+
+/* --- Assinaturas: cards de planos, banner do trial e tela de assinatura --- */
+.trial-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 10px;
+  margin-bottom: 18px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 0.95rem;
+  text-align: center;
+}
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 340px));
+  gap: 20px;
+  align-items: stretch;
+}
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+}
+.plan-card.featured {
+  border-color: var(--accent);
+}
+.plan-band {
+  height: 10px;
+  background: var(--accent-soft);
+}
+.plan-card.featured .plan-band {
+  background: var(--accent);
+}
+.plan-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 22px 22px;
+}
+.plan-top {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.plan-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 999px;
+  min-height: 1.5em;
+}
+.plan-badge.current {
+  background: var(--lilac-soft);
+  color: var(--lilac);
+}
+.plan-badge.save {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.plan-badge.placeholder {
+  visibility: hidden;
+}
+.plan-name {
+  font-size: 1.5rem;
+}
+.plan-price {
+  margin: 6px 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.plan-price b {
+  font-family: var(--f-display);
+  font-size: 2.3rem;
+  line-height: 1;
+}
+.plan-price span {
+  font-weight: 600;
+  color: var(--muted);
+}
+.plan-note {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.plan-divider {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 6px 0;
+}
+.plan-benefits {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+.plan-benefits li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.plan-benefits svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.plan-cta {
+  width: 100%;
+  padding: 12px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.plan-cta:hover:not([disabled]) {
+  filter: brightness(1.08);
+}
+.plan-cta:focus-visible {
+  outline: 3px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+.plan-cta[disabled] {
+  cursor: not-allowed;
+}
+.plan-cta.current {
+  background: var(--line);
+  border-color: var(--line);
+  color: var(--muted);
+}
+.plan-card:not(.current) .plan-cta[disabled] {
+  opacity: 0.6;
+}
+.sub-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  margin: 0;
+}
+.sub-facts dt {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.sub-facts dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+.checkout-status {
+  max-width: 520px;
+  margin: 6vh auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+@media (max-width: 760px) {
+  /* No celular os cards rolam na horizontal, um por vez. */
+  .plan-grid {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    gap: 14px;
+    padding-bottom: 8px;
+    margin-inline: -4px;
+    padding-inline: 4px;
+  }
+  .plan-card {
+    flex: 0 0 86%;
+    scroll-snap-align: center;
   }
 }
