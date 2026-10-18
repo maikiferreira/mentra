@@ -7,6 +7,7 @@ import {
   SubscriptionModel,
   UserModel,
 } from './models.js';
+import { migrateEvaluations } from './migrations.js';
 
 export const initModels = () =>
   Promise.all([
@@ -23,6 +24,7 @@ export async function connectDatabase(
 ) {
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 10_000 });
   await initModels();
+  await migrateEvaluations();
 }
 
 export async function disconnectDatabase() {

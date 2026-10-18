@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import type { SubscriptionStatus } from '@mente-ativa/shared';
 import { jsonBody, type BillingMe } from '../../api';
-import { client } from '../../client';
+import { client } from '../../lib/client';
 import { useUIStore } from '../../ui-store';
 
 export const billingMeKey = (username: string) => ['billing-me', username] as const;

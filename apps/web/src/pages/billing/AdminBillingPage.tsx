@@ -16,7 +16,7 @@ import {
   YAxis,
 } from 'recharts';
 import { PLANS, formatBRL, type PlanId } from '@mente-ativa/shared';
-import { client } from '../../client';
+import { client } from '../../lib/client';
 import { STATUS_LABEL, formatDate } from './billing-shared';
 
 interface Summary {

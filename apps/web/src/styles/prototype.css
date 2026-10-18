@@ -770,6 +770,159 @@ button {
   display: block;
   color: var(--muted);
 }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+tr.sel td {
+  background: var(--accent-soft);
+}
+.answers tr.group th {
+  padding-top: 14px;
+  color: var(--ink);
+}
+.areas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.area-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.area-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.area-list li:last-child {
+  border-bottom: 0;
+}
+.area-list .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.tracker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-top: 8px;
+}
+.weeks {
+  display: inline-flex;
+  gap: 4px;
+}
+.wk {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  cursor: pointer;
+}
+.wk.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.print-routine {
+  width: 100%;
+  margin-top: 16px;
+  border-collapse: collapse;
+}
+.print-routine th,
+.print-routine td {
+  border: 1px solid var(--line);
+  padding: 8px;
+  vertical-align: top;
+  text-align: left;
+}
+.print-routine .day {
+  width: 44px;
+  text-align: center;
+}
+.print-routine .box {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+}
+.print-notes {
+  margin-top: 18px;
+}
+.print-notes .lines {
+  height: 120px;
+  margin-top: 8px;
+  background: repeating-linear-gradient(transparent 0 29px, var(--line) 29px 30px);
+}
+.report header,
+.report section {
+  margin-bottom: 22px;
+}
+.report h2 {
+  margin-bottom: 8px;
+}
+.report h3 {
+  font-size: 1rem;
+  margin: 10px 0 2px;
+}
+.report ul {
+  padding-left: 1.2rem;
+}
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.report-table th,
+.report-table td {
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.signature {
+  margin-top: 48px;
+  max-width: 360px;
+}
+.signature span {
+  display: block;
+  border-top: 1px solid var(--ink);
+  margin-bottom: 6px;
+}
+@media print {
+  .report section,
+  .report footer,
+  .report-test,
+  .report-table tr {
+    break-inside: avoid;
+  }
+  .side,
+  .no-print,
+  .principle {
+    display: none !important;
+  }
+  .shell {
+    display: block;
+  }
+  body {
+    background: #fff;
+  }
+  .print-page {
+    color: #000;
+  }
+}
 .interp {
   display: inline-block;
   min-width: 220px;

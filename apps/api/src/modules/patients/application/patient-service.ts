@@ -1,8 +1,8 @@
+import type { PatientDto, PatientListDto } from '@mente-ativa/shared';
 import {
   EMERGENCY_RELATIONSHIPS,
   LIMITATIONS,
   PATIENT_GROUPS,
-  instrumentOf,
   instrumentTrend,
   nextPatientCode,
 } from '@mente-ativa/shared';
@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { notFound, validationError } from '../../shared/kernel/errors.js';
 import { PatientModel, UserModel } from '../../shared/infra/models.js';
 import { canAccessPatient } from '../domain/access-policy.js';
-import { latestResults } from '../../evaluations/domain/patient-evaluations.js';
+import { lastRegistered, latestResults } from '../../evaluations/domain/patient-evaluations.js';
 import type { AuthUser } from '../../shared/presentation/http.js';
 
 const patientBodySchema = z.object({
@@ -139,7 +139,7 @@ function validatePatient(input: unknown): PatientInput {
 }
 
 export class PatientService {
-  async list(user: AuthUser) {
+  async list(user: AuthUser): Promise<PatientListDto> {
     const query = user.role === 'admin' ? {} : { responsibleUsername: user.username };
     const patients = await PatientModel.find(query).sort({ _id: 1 }).lean();
     const usernames = [...new Set(patients.map((patient) => patient.responsibleUsername))];
@@ -150,10 +150,10 @@ export class PatientService {
     const names = new Map(users.map((entry) => [entry.username, entry.name]));
     return {
       items: patients.map((patient) => {
-        const last = patient.evaluations.at(-1);
-        // A lista mostra o teste aplicado por último.
+        // A lista mostra o teste registrado por último, com o resultado mais recente dele.
+        const last = lastRegistered(patient);
         const current = last
-          ? latestResults(patient).find((entry) => entry.definition.key === instrumentOf(last))
+          ? latestResults(patient).find((entry) => entry.definition.key === last.instrument)
           : undefined;
         return {
           id: patient.code,
@@ -167,7 +167,7 @@ export class PatientService {
                   names.get(patient.responsibleUsername) ?? patient.responsibleUsername,
               }
             : {}),
-          lastEvaluationDate: last?.date ?? null,
+          lastEvaluationDate: current?.date ?? null,
           lastResult: current
             ? {
                 instrument: current.definition.key,
@@ -183,7 +183,7 @@ export class PatientService {
     };
   }
 
-  async get(user: AuthUser, code: string) {
+  async get(user: AuthUser, code: string): Promise<PatientDto> {
     const patient = await this.findVisible(user, code);
     const responsible = await UserModel.findOne(
       { username: patient.responsibleUsername },
@@ -193,11 +193,15 @@ export class PatientService {
       id: patient.code,
       initials: patient.initials,
       age: patient.age,
-      educationYears: patient.educationYears,
+      educationYears: patient.educationYears ?? null,
       interests: patient.interests,
       phone: patient.phone,
       address: patient.address,
-      emergencyContact: patient.emergencyContact,
+      emergencyContact: {
+        name: patient.emergencyContact?.name ?? '',
+        phone: patient.emergencyContact?.phone ?? '',
+        relationship: patient.emergencyContact?.relationship ?? '',
+      },
       vision: patient.vision,
       hearing: patient.hearing,
       mobility: patient.mobility,
@@ -215,7 +219,7 @@ export class PatientService {
     return patient;
   }
 
-  async create(user: AuthUser, input: unknown) {
+  async create(user: AuthUser, input: unknown): Promise<PatientDto> {
     const fields = validatePatient(input);
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const codes = await PatientModel.find({}, { code: 1, _id: 0 }).lean();
@@ -236,7 +240,7 @@ export class PatientService {
     throw new Error('Não foi possível gerar o código do paciente.');
   }
 
-  async update(user: AuthUser, code: string, input: unknown) {
+  async update(user: AuthUser, code: string, input: unknown): Promise<PatientDto> {
     const fields = validatePatient(input);
     const patient = await this.findVisible(user, code);
     await PatientModel.updateOne({ _id: patient._id }, { $set: fields });

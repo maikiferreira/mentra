@@ -15,13 +15,16 @@ const userSchema = new Schema(
 
 const evaluationSchema = new Schema(
   {
-    date: { type: String, required: true },
+    id: { type: String, required: true },
     // Avaliações anteriores aos múltiplos testes não têm o campo: são MEEM.
     instrument: { type: String, default: 'meem' },
+    // Dia da avaliação, à meia-noite UTC.
+    performedOn: { type: Date, required: true },
     // Respostas por campo do teste (ver INSTRUMENTS em @mente-ativa/shared).
     scores: { type: Schema.Types.Mixed, required: true },
     notes: { type: String, default: null },
     createdAt: { type: Date, required: true, default: Date.now },
+    updatedAt: { type: Date, default: null },
   },
   { _id: false },
 );
@@ -30,6 +33,8 @@ const suggestionStateSchema = new Schema(
     key: { type: String, required: true },
     status: { type: String, enum: ['open', 'ok', 'no'], required: true, default: 'open' },
     customText: { type: String, default: null },
+    // Quando entrou na rotina; a adesão semanal conta a partir dessa semana.
+    acceptedAt: { type: Date, default: null },
   },
   { _id: false },
 );
@@ -55,6 +60,19 @@ const patientSchema = new Schema(
     responsibleUsername: { type: String, required: true, index: true },
     evaluations: { type: [evaluationSchema], default: [] },
     suggestionStates: { type: [suggestionStateSchema], default: [] },
+    // Semanas (segunda-feira, aaaa-mm-dd) em que cada atividade da rotina foi feita.
+    routineLog: {
+      type: [
+        new Schema(
+          {
+            key: { type: String, required: true },
+            week: { type: String, required: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
   },
   { timestamps: true, versionKey: '__v' },
 );

@@ -35,4 +35,7 @@ export const MEEM_LABEL = 'Instrumento de exemplo: MEEM (0 a 30)';
 
 export * from './care-planning.js';
 export * from './instruments.js';
+export * from './overview.js';
+export * from './routine.js';
 export * from './billing.js';
+export type * from './contracts.js';

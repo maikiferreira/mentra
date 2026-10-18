@@ -178,25 +178,6 @@ export function generateSuggestions(patient: {
   }));
 }
 
-/**
- * Chave numérica (aaaammdd) para ordenar datas de avaliação. Aceita `dd/mm/aaaa`,
- * com sufixo opcional ` #n`, e `mm/aaaa` (datas dos pacientes de exemplo).
- */
-export function evaluationDateKey(date: string): number | null {
-  const full = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(date);
-  if (full) return Number(`${full[3]}${full[2]}${full[1]}`);
-  const monthOnly = /^(\d{2})\/(\d{4})$/.exec(date);
-  if (monthOnly) return Number(`${monthOnly[2]}${monthOnly[1]}01`);
-  return null;
-}
-
-export function uniqueDate(evaluations: Pick<Evaluation, 'date'>[], today: string): string {
-  if (!evaluations.some((evaluation) => evaluation.date === today)) return today;
-  let suffix = 2;
-  while (evaluations.some((evaluation) => evaluation.date === `${today} #${suffix}`)) suffix += 1;
-  return `${today} #${suffix}`;
-}
-
 export function nextPatientCode(existingCodes: string[]): string {
   const highest = existingCodes.reduce(
     (max, code) => Math.max(max, Number.parseInt(code, 10) || 0),
