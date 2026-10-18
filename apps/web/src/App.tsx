@@ -48,6 +48,7 @@ import { PlansPage } from './pages/billing/PlansPage';
 import { CheckoutSuccessPage } from './pages/billing/CheckoutSuccessPage';
 import { SubscriptionSettingsPage } from './pages/billing/SubscriptionSettingsPage';
 import { TrialBanner } from './pages/billing/TrialBanner';
+import { AdminBillingPage } from './pages/billing/AdminBillingPage';
 
 const dateBR = () =>
   new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(new Date());
@@ -2081,6 +2082,14 @@ function RouterContent() {
         <Route path="/assinatura/planos" element={<PlansPage />} />
         <Route path="/assinatura/sucesso" element={<CheckoutSuccessPage />} />
         <Route path="/perfil/assinatura" element={<SubscriptionSettingsPage />} />
+        <Route
+          path="/admin/assinaturas"
+          element={
+            <AdminOnly>
+              <AdminBillingPage />
+            </AdminOnly>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to={session ? '/' : '/login'} replace />} />
     </Routes>

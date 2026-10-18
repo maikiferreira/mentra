@@ -1,9 +1,12 @@
 import { Router, type RequestHandler } from 'express';
 import type { BillingService } from '../application/billing-service.js';
+import type { BillingMetricsService } from '../application/billing-metrics-service.js';
 import { InvalidWebhookSignature } from '../infra/stripe-gateway.js';
 import {
   getRequestAccess,
   getRequestUser,
+  requireAdmin,
+  requireAuth,
   requireAuthAllowUnpaid,
 } from '../../shared/presentation/http.js';
 
@@ -25,6 +28,18 @@ export function createBillingRouter(billing: BillingService) {
   );
   router.post('/portal', requireAuthAllowUnpaid, async (request, response) =>
     response.json(await billing.openPortal(getRequestUser(request).username)),
+  );
+  return router;
+}
+
+export function createAdminBillingRouter(metrics: BillingMetricsService) {
+  const router = Router();
+  router.use(requireAuth, requireAdmin);
+  router.get('/summary', async (_request, response) => response.json(await metrics.summary()));
+  router.get('/subscriptions', async (request, response) =>
+    response.json(
+      await metrics.subscriptions({ status: request.query.status, plan: request.query.plan }),
+    ),
   );
   return router;
 }

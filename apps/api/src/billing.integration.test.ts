@@ -13,6 +13,7 @@ import {
   UserModel,
 } from './modules/shared/infra/models.js';
 import { migrateBilling } from './migrate-billing.js';
+import { BillingMetricsService } from './modules/billing/application/billing-metrics-service.js';
 import { FakeBillingGateway } from './modules/billing/infra/fake-billing-gateway.js';
 import { setMailTransport, type MailMessage } from './modules/shared/infra/mailer.js';
 import type Stripe from 'stripe';
@@ -549,5 +550,165 @@ describe('RN-PAY-08: e-mails transacionais (mailer fake)', () => {
     const token = await addUser('novo', { email: 'novo@exemplo.com' });
     await subscribe('novo', token);
     expect((await request(app).get('/api/v1/patients').set(auth(token))).status).toBe(200);
+  });
+});
+
+describe('RN-PAY-09: painel de assinaturas do admin', () => {
+  const NOW = new Date('2026-10-18T15:00:00Z');
+  const at = (iso: string) => new Date(`${iso}T12:00:00Z`);
+
+  async function seedBillingData() {
+    const user = (username: string, origin: Origin, extra: Record<string, unknown> = {}) => ({
+      username,
+      name: `Pessoa ${username}`,
+      email: `${username}@exemplo.com`,
+      role: 'professional',
+      origin,
+      passwordHash: 'x',
+      createdAt: at('2026-01-01'),
+      updatedAt: at('2026-01-01'),
+      ...extra,
+    });
+    // insertMany direto na coleção preserva createdAt (o Mongoose sobrescreveria).
+    await UserModel.collection.insertMany([
+      user('a', 'signup'),
+      user('b', 'trial', { createdAt: at('2026-10-01'), trialEndsAt: at('2026-10-05') }),
+      user('c', 'signup'),
+      user('d', 'signup'),
+      user('e', 'signup'),
+      user('f', 'signup'),
+      user('t1', 'trial', { createdAt: at('2026-10-10'), trialEndsAt: at('2026-10-17') }),
+      user('t2', 'trial', { createdAt: at('2026-10-15'), trialEndsAt: at('2026-10-22') }),
+    ]);
+    const sub = (
+      username: string,
+      plan: 'monthly' | 'annual',
+      status: string,
+      activatedAt: string,
+      currentPeriodEnd: string,
+      extra: Record<string, unknown> = {},
+    ) => ({
+      username,
+      plan,
+      status,
+      stripeCustomerId: `cus_${username}`,
+      stripeSubscriptionId: `sub_${username}`,
+      startedAt: at(activatedAt),
+      activatedAt: at(activatedAt),
+      currentPeriodEnd: at(currentPeriodEnd),
+      ...extra,
+    });
+    await SubscriptionModel.create([
+      sub('a', 'monthly', 'active', '2026-08-10', '2026-11-10'),
+      sub('b', 'monthly', 'active', '2026-10-05', '2026-11-05'),
+      sub('c', 'annual', 'active', '2026-09-01', '2027-09-01'),
+      sub('d', 'monthly', 'past_due', '2026-07-01', '2026-10-01', {
+        pastDueSince: at('2026-10-01'),
+      }),
+      sub('e', 'monthly', 'canceled', '2026-09-15', '2026-10-15', { canceledAt: at('2026-10-10') }),
+      sub('f', 'annual', 'active', '2026-06-01', '2026-11-01', {
+        cancelAtPeriodEnd: true,
+        canceledAt: at('2026-10-12'),
+      }),
+    ]);
+    const paid = (username: string, id: string, amountCents: number, paidAt: string) => ({
+      username,
+      stripeInvoiceId: id,
+      amountCents,
+      currency: 'brl',
+      status: 'paid',
+      paidAt: at(paidAt),
+    });
+    await PaymentModel.create([
+      paid('a', 'in_a1', 4990, '2026-08-10'),
+      paid('a', 'in_a2', 4990, '2026-09-10'),
+      paid('a', 'in_a3', 4990, '2026-10-10'),
+      paid('c', 'in_c1', 53892, '2026-09-01'),
+      paid('b', 'in_b1', 4990, '2026-10-05'),
+      {
+        username: 'd',
+        stripeInvoiceId: 'in_d1',
+        amountCents: 4990,
+        currency: 'brl',
+        status: 'failed',
+      },
+    ]);
+  }
+
+  it('calcula KPIs, MRR, receita mensal, conversão, churn e próximos 30 dias', async () => {
+    await seedBillingData();
+    const summary = await new BillingMetricsService().summary(NOW);
+    expect(summary.kpis).toEqual({
+      activeMonthly: 2,
+      activeAnnual: 2,
+      active: 4,
+      inTrial: 1,
+      pastDue: 1,
+      canceledThisMonth: 2,
+      // 2 × 49,90 + 2 × 538,92 / 12
+      mrrCents: 18962,
+      arrCents: 227544,
+      revenueThisMonthCents: 9980,
+      revenueTotalCents: 73852,
+      averageTicketCents: 14770,
+      trialConversionRate: 1 / 3,
+      trialsLast30Days: 3,
+      convertedTrialsLast30Days: 1,
+      // e e f cancelaram este mês, de 5 ativas no início do mês (a, c, d, e, f).
+      churnRate: 0.4,
+    });
+    expect(summary.series).toHaveLength(12);
+    expect(summary.series[0]!.month).toBe('2025-11');
+    expect(summary.series.slice(-3)).toEqual([
+      { month: '2026-08', revenueCents: 4990, newSubscriptions: 1, cancellations: 0 },
+      { month: '2026-09', revenueCents: 58882, newSubscriptions: 2, cancellations: 0 },
+      { month: '2026-10', revenueCents: 9980, newSubscriptions: 1, cancellations: 2 },
+    ]);
+    expect(summary.upcoming).toEqual({ renewals: 2, expectedRevenueCents: 9980 });
+  });
+
+  it('lista assinaturas e trials com filtros; só admin acessa', async () => {
+    await seedBillingData();
+    const admin = await addUser('chefe', { role: 'admin', origin: 'seed' });
+    const prof = await addUser('prof', { origin: 'seed' });
+    expect((await request(app).get('/api/v1/admin/billing/summary').set(auth(prof))).status).toBe(
+      403,
+    );
+    expect(
+      (await request(app).get('/api/v1/admin/billing/subscriptions').set(auth(prof))).status,
+    ).toBe(403);
+    expect((await request(app).get('/api/v1/admin/billing/summary').set(auth(admin))).status).toBe(
+      200,
+    );
+
+    const all = await request(app).get('/api/v1/admin/billing/subscriptions').set(auth(admin));
+    expect(all.body.items).toHaveLength(8);
+    const a = all.body.items.find((item: { username: string }) => item.username === 'a');
+    expect(a).toMatchObject({
+      name: 'Pessoa a',
+      email: 'a@exemplo.com',
+      plan: 'monthly',
+      status: 'active',
+      startedAt: at('2026-08-10').toISOString(),
+      currentPeriodEnd: at('2026-11-10').toISOString(),
+      paymentsCount: 3,
+      totalPaidCents: 14970,
+      lastPaymentAt: at('2026-10-10').toISOString(),
+      stripeCustomerId: 'cus_a',
+    });
+    const trials = await request(app)
+      .get('/api/v1/admin/billing/subscriptions?status=trial')
+      .set(auth(admin));
+    expect(trials.body.items.map((item: { username: string }) => item.username).sort()).toEqual([
+      't1',
+      't2',
+    ]);
+    const annual = await request(app)
+      .get('/api/v1/admin/billing/subscriptions?status=active&plan=annual')
+      .set(auth(admin));
+    expect(annual.body.items.map((item: { username: string }) => item.username).sort()).toEqual([
+      'c',
+      'f',
+    ]);
   });
 });

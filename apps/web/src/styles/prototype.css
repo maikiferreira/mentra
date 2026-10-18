@@ -16,6 +16,9 @@
   --warn-soft: #fcefd2;
   --lilac: #6b4fb8;
   --lilac-soft: #ece6fa;
+  /* Cores de gráfico validadas (CVD/contraste) contra --surface de cada tema. */
+  --chart-1: #008a73;
+  --chart-2: #6b4fb8;
   --f-display: 'Bricolage Grotesque', system-ui, sans-serif;
   --f-body: 'Public Sans', system-ui, -apple-system, sans-serif;
 }
@@ -37,6 +40,8 @@
     --warn-soft: #41300f;
     --lilac: #c4b0ff;
     --lilac-soft: #2e2547;
+    --chart-1: #17a08a;
+    --chart-2: #8f70e6;
     color-scheme: dark;
   }
 }
@@ -57,6 +62,8 @@
   --warn-soft: #41300f;
   --lilac: #c4b0ff;
   --lilac-soft: #2e2547;
+  --chart-1: #17a08a;
+  --chart-2: #8f70e6;
   color-scheme: dark;
 }
 * {
@@ -1169,4 +1176,81 @@ th.num {
     flex: 0 0 86%;
     scroll-snap-align: center;
   }
+}
+.billing-kpis .kpi b {
+  font-size: 1.35rem;
+}
+.billing-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+.chart-panel {
+  margin: 0;
+  min-width: 0;
+}
+.chart-panel figcaption {
+  margin-bottom: 8px;
+}
+.chart-panel h2 {
+  font-size: 1.1rem;
+  margin-bottom: 2px;
+}
+.chart-area {
+  min-width: 0;
+}
+.donut-legend {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 0.95rem;
+}
+.donut-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: none;
+}
+.series-table {
+  margin-top: 16px;
+}
+.series-table summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.series-table[open] summary {
+  margin-bottom: 10px;
+}
+.billing-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.billing-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.billing-filters select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.billing-table td:not(:first-child) {
+  white-space: nowrap;
 }

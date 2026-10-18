@@ -25,9 +25,11 @@ import {
   type BillingGateway,
 } from './modules/billing/infra/stripe-gateway.js';
 import {
+  createAdminBillingRouter,
   createBillingRouter,
   createWebhookHandler,
 } from './modules/billing/presentation/routes.js';
+import { BillingMetricsService } from './modules/billing/application/billing-metrics-service.js';
 
 export interface AppOptions {
   /** `null` desliga o Stripe (rotas de billing respondem 503); omitido, lê do ambiente. */
@@ -96,6 +98,7 @@ export function createApp(options: AppOptions = {}) {
   api.use('/routines', routineRouter);
   api.use('/dashboard', dashboardRouter);
   api.use('/billing', createBillingRouter(billing));
+  api.use('/admin/billing', createAdminBillingRouter(new BillingMetricsService()));
   api.use(adminRouter);
   api.get('/meta/options', (_request, response) =>
     response.json({
