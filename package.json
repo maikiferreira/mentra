@@ -15,7 +15,7 @@
     "react-dom": "18.3.1"
   },
   "scripts": {
-    "dev": "npm run dev --workspaces --if-present",
+    "dev": "concurrently -k -n api,web \"npm run dev --workspace=@mente-ativa/api\" \"npm run dev --workspace=@mente-ativa/web\"",
     "build": "npm run build --workspaces --if-present",
     "test": "vitest run",
     "test:e2e": "playwright test",
@@ -32,6 +32,7 @@
     "@playwright/test": "^1.56.1",
     "@types/node": "^24.10.1",
     "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^9.2.1",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.0.1",
