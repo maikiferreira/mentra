@@ -19,6 +19,7 @@ import {
   billingConfigFromEnv,
   type BillingConfig,
 } from './modules/billing/application/billing-service.js';
+import { createEmailNotifier } from './modules/billing/application/emails.js';
 import {
   createBillingGatewayFromEnv,
   type BillingGateway,
@@ -48,9 +49,11 @@ const authRateLimit = rateLimit({
 });
 
 export function createApp(options: AppOptions = {}) {
+  const billingConfig = options.billingConfig ?? billingConfigFromEnv();
   const billing = new BillingService(
     options.billingGateway === undefined ? createBillingGatewayFromEnv() : options.billingGateway,
-    options.billingConfig ?? billingConfigFromEnv(),
+    billingConfig,
+    createEmailNotifier(billingConfig.appUrl),
   );
   const app = express();
   app.disable('x-powered-by');

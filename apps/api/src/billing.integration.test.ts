@@ -14,6 +14,7 @@ import {
 } from './modules/shared/infra/models.js';
 import { migrateBilling } from './migrate-billing.js';
 import { FakeBillingGateway } from './modules/billing/infra/fake-billing-gateway.js';
+import { setMailTransport, type MailMessage } from './modules/shared/infra/mailer.js';
 import type Stripe from 'stripe';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -26,6 +27,7 @@ const app = createApp({
   },
 });
 let mongo: MongoMemoryServer;
+const sentMail: Array<MailMessage & { from: string }> = [];
 
 type Origin = 'seed' | 'signup' | 'trial';
 async function addUser(
@@ -61,11 +63,18 @@ beforeAll(async () => {
   await initModels();
 });
 afterAll(async () => {
+  setMailTransport(null);
   await mongoose.disconnect();
   await mongo.stop();
 });
 beforeEach(async () => {
   gateway.reset();
+  sentMail.length = 0;
+  setMailTransport({
+    send: async (message) => {
+      sentMail.push(message);
+    },
+  });
   await Promise.all([
     UserModel.deleteMany({}),
     LeadModel.deleteMany({}),
@@ -455,5 +464,90 @@ describe('RN-PAY-07/RN-PAY-10: integração Stripe (gateway fake)', () => {
     expect(checkout.body.error.code).toBe('BILLING_UNAVAILABLE');
     expect((await request(disabled).post('/api/v1/billing/webhook').send('{}')).status).toBe(503);
     expect((await request(disabled).get('/api/v1/billing/plans')).status).toBe(200);
+  });
+});
+
+describe('RN-PAY-08: e-mails transacionais (mailer fake)', () => {
+  const subjects = () => sentMail.map((mail) => mail.subject);
+
+  it('a ativação envia exatamente 1 e-mail de acesso liberado; eventos repetidos não reenviam', async () => {
+    const token = await addUser('novo', { email: 'novo@exemplo.com' });
+    const { customer, subscriptionId } = await subscribe('novo', token);
+    expect(sentMail).toHaveLength(1);
+    expect(sentMail[0]).toMatchObject({
+      to: 'novo@exemplo.com',
+      subject: 'Seu acesso ao Mente Ativa está liberado',
+      from: 'Mente Ativa <acesso@menteativaa.com.br>',
+    });
+    expect(sentMail[0]!.html).toContain('https://app.test/login');
+    expect(sentMail[0]!.text).toContain('Para entrar, use o seu usuário: novo.');
+    expect(sentMail[0]!.text).toContain('Plano Mensal: R$ 49,90 por mês.');
+
+    // Mesmo evento reenviado pelo Stripe, e novos eventos da assinatura já ativa.
+    await sendEvent('customer.subscription.updated', { id: subscriptionId }, 'evt_repetido');
+    await sendEvent('customer.subscription.updated', { id: subscriptionId }, 'evt_repetido');
+    await sendEvent(
+      'invoice.paid',
+      stripeInvoice({ customer, subscription: subscriptionId, paidAt: new Date() }),
+    );
+    expect(subjects()).toEqual(['Seu acesso ao Mente Ativa está liberado']);
+  });
+
+  it('falha de pagamento avisa uma vez por fatura; cancelamento avisa uma vez', async () => {
+    const token = await addUser('novo', { email: 'novo@exemplo.com' });
+    const { customer, subscriptionId } = await subscribe('novo', token);
+    const failed = stripeInvoice({
+      id: 'in_9',
+      customer,
+      subscription: subscriptionId,
+      paidAt: null,
+    });
+    await sendEvent('invoice.payment_failed', failed);
+    await sendEvent('invoice.payment_failed', failed); // nova tentativa da mesma fatura
+    const periodEnd = fromNow(12);
+    gateway.subscriptions.set(
+      subscriptionId,
+      stripeSubscription({
+        id: subscriptionId,
+        customer,
+        username: 'novo',
+        periodEnd,
+        cancelAtPeriodEnd: true,
+      }),
+    );
+    await sendEvent('customer.subscription.updated', { id: subscriptionId });
+    await sendEvent('customer.subscription.updated', { id: subscriptionId });
+    expect(subjects()).toEqual([
+      'Seu acesso ao Mente Ativa está liberado',
+      'Não conseguimos processar o seu pagamento',
+      'Sua assinatura foi cancelada',
+    ]);
+    expect(sentMail[2]!.html).toContain('https://app.test/perfil/assinatura');
+  });
+
+  it('"Quero testar" envia o e-mail de boas-vindas ao trial', async () => {
+    await request(app).post('/api/v1/auth/trial-access').send({
+      name: 'Bia Lima',
+      phone: '(32) 91234-5678',
+      email: 'bia@exemplo.com',
+      consent: true,
+    });
+    expect(sentMail).toHaveLength(1);
+    expect(sentMail[0]).toMatchObject({
+      to: 'bia@exemplo.com',
+      subject: 'Bem-vindo(a) ao teste grátis do Mente Ativa',
+    });
+    expect(sentMail[0]!.text).toContain('Seu usuário é bia');
+  });
+
+  it('erro no SMTP não derruba o webhook nem impede a ativação', async () => {
+    setMailTransport({
+      send: async () => {
+        throw new Error('SMTP fora do ar');
+      },
+    });
+    const token = await addUser('novo', { email: 'novo@exemplo.com' });
+    await subscribe('novo', token);
+    expect((await request(app).get('/api/v1/patients').set(auth(token))).status).toBe(200);
   });
 });

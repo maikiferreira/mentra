@@ -3,6 +3,9 @@ import { TRIAL_DAYS, TRIAL_PROFILES, firstNameUsername, uniqueUsername } from '@
 import { z } from 'zod';
 import { ApiError, conflict, validationError } from '../../shared/kernel/errors.js';
 import { LeadModel, UserModel } from '../../shared/infra/models.js';
+import { sendMail } from '../../shared/infra/mailer.js';
+import { billingConfigFromEnv } from '../../billing/application/billing-service.js';
+import { trialWelcome } from '../../billing/application/emails.js';
 import { createToken, type AuthUser, type RequestAccess } from '../../shared/presentation/http.js';
 
 const credentialsSchema = z.object({ username: z.string(), password: z.string() });
@@ -136,6 +139,14 @@ export class AuthService {
         await LeadModel.deleteOne({ _id: lead._id });
         throw error;
       }
+      if (user.trialEndsAt)
+        await sendMail(
+          trialWelcome(
+            { username, name, email: email.toLowerCase() },
+            billingConfigFromEnv().appUrl,
+            user.trialEndsAt,
+          ),
+        );
       const view = publicUser(user);
       return { token: createToken(view), user: view, credentials: { username, password } };
     } catch (error) {
