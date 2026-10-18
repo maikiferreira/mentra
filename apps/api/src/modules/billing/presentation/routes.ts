@@ -1,7 +1,7 @@
 import { Router, type RequestHandler } from 'express';
 import type { BillingService } from '../application/billing-service.js';
 import type { BillingMetricsService } from '../application/billing-metrics-service.js';
-import { InvalidWebhookSignature } from '../infra/stripe-gateway.js';
+import { InvalidWebhookSignature } from '../infra/billing-gateway.js';
 import {
   getRequestAccess,
   getRequestUser,
@@ -44,17 +44,17 @@ export function createAdminBillingRouter(metrics: BillingMetricsService) {
   return router;
 }
 
-/** Recebe o corpo bruto (express.raw), exigido para validar a assinatura do Stripe. */
+/** Recebe o corpo bruto (express.raw), exigido para validar o `x-signature` da Eduzz. */
 export function createWebhookHandler(billing: BillingService): RequestHandler {
   return async (request, response) => {
     let event;
     try {
-      event = billing.parseWebhook(request.body as Buffer, request.header('stripe-signature'));
+      event = billing.parseWebhook(request.body as Buffer, request.header('x-signature'));
     } catch (error) {
       if (!(error instanceof InvalidWebhookSignature)) throw error;
       response
-        .status(400)
-        .json({ error: { code: 'VALIDATION_ERROR', message: 'Assinatura do webhook inválida.' } });
+        .status(401)
+        .json({ error: { code: 'UNAUTHORIZED', message: 'Assinatura do webhook inválida.' } });
       return;
     }
     const result = await billing.handleEvent(event);

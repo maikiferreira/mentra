@@ -95,9 +95,12 @@ const subscriptionSchema = new Schema(
   {
     username: { type: String, required: true, unique: true },
     email: { type: String, default: null },
-    // Os índices sparse permitem vários documentos ainda sem cliente/assinatura no Stripe.
-    stripeCustomerId: { type: String, unique: true, sparse: true },
-    stripeSubscriptionId: { type: String, unique: true, sparse: true },
+    provider: { type: String, enum: ['eduzz'], default: 'eduzz' },
+    // Contrato de assinatura na Eduzz; sparse permite documentos ainda sem contrato.
+    eduzzContractId: { type: String, unique: true, sparse: true },
+    // E-mail usado na compra (pode diferir do e-mail do usuário).
+    buyerEmail: { type: String, default: null, index: true },
+    providerStatus: { type: String, default: null },
     plan: { type: String, enum: planEnum, default: null },
     status: {
       type: String,
@@ -119,22 +122,40 @@ const subscriptionSchema = new Schema(
 const paymentSchema = new Schema(
   {
     username: { type: String, required: true, index: true },
-    stripeInvoiceId: { type: String, required: true, unique: true },
+    providerInvoiceId: { type: String, required: true, unique: true },
     amountCents: { type: Number, required: true },
     currency: { type: String, required: true },
     plan: { type: String, enum: planEnum, default: null },
     status: { type: String, enum: ['paid', 'failed', 'refunded'], required: true },
+    paymentMethod: { type: String, default: null },
+    installments: { type: Number, default: null },
     paidAt: { type: Date, default: null, index: true },
   },
   { timestamps: true },
 );
-const processedStripeEventSchema = new Schema(
+const processedWebhookEventSchema = new Schema(
   {
     eventId: { type: String, required: true, unique: true },
+    provider: { type: String, required: true, default: 'eduzz' },
     type: { type: String, required: true },
     processedAt: { type: Date, required: true, default: Date.now },
   },
   { versionKey: false },
+);
+
+// Eventos de cobrança sem usuário identificado: o admin vincula manualmente (RN-PAY-11).
+const unmatchedBillingEventSchema = new Schema(
+  {
+    eventId: { type: String, required: true, unique: true },
+    type: { type: String, required: true },
+    tracker: { type: String, default: null },
+    contractId: { type: String, default: null },
+    buyerEmail: { type: String, default: null },
+    payload: { type: Schema.Types.Mixed, required: true },
+    resolvedAt: { type: Date, default: null },
+    resolvedUsername: { type: String, default: null },
+  },
+  { timestamps: true },
 );
 
 export type UserRecord = InferSchemaType<typeof userSchema>;
@@ -142,7 +163,8 @@ export type PatientRecord = InferSchemaType<typeof patientSchema>;
 export type LeadRecord = InferSchemaType<typeof leadSchema>;
 export type SubscriptionRecord = InferSchemaType<typeof subscriptionSchema>;
 export type PaymentRecord = InferSchemaType<typeof paymentSchema>;
-export type ProcessedStripeEventRecord = InferSchemaType<typeof processedStripeEventSchema>;
+export type ProcessedWebhookEventRecord = InferSchemaType<typeof processedWebhookEventSchema>;
+export type UnmatchedBillingEventRecord = InferSchemaType<typeof unmatchedBillingEventSchema>;
 export const UserModel =
   (mongoose.models.User as mongoose.Model<UserRecord> | undefined) ??
   mongoose.model<UserRecord>('User', userSchema);
@@ -158,7 +180,11 @@ export const SubscriptionModel =
 export const PaymentModel =
   (mongoose.models.Payment as mongoose.Model<PaymentRecord> | undefined) ??
   mongoose.model<PaymentRecord>('Payment', paymentSchema);
-export const ProcessedStripeEventModel =
-  (mongoose.models.ProcessedStripeEvent as
-    mongoose.Model<ProcessedStripeEventRecord> | undefined) ??
-  mongoose.model<ProcessedStripeEventRecord>('ProcessedStripeEvent', processedStripeEventSchema);
+export const ProcessedWebhookEventModel =
+  (mongoose.models.ProcessedWebhookEvent as
+    mongoose.Model<ProcessedWebhookEventRecord> | undefined) ??
+  mongoose.model<ProcessedWebhookEventRecord>('ProcessedWebhookEvent', processedWebhookEventSchema);
+export const UnmatchedBillingEventModel =
+  (mongoose.models.UnmatchedBillingEvent as
+    mongoose.Model<UnmatchedBillingEventRecord> | undefined) ??
+  mongoose.model<UnmatchedBillingEventRecord>('UnmatchedBillingEvent', unmatchedBillingEventSchema);

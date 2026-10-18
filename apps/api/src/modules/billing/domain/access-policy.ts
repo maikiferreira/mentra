@@ -41,7 +41,7 @@ export function hasActiveAccess(
     return { hasAccess: true, reason: 'trial' };
   if (subscription) {
     const { status, currentPeriodEnd, pastDueSince } = subscription;
-    // "trialing" só existiria com trial configurado no Stripe; vale como assinatura em dia.
+    // "trialing" vem de contrato em teste na Eduzz; vale como assinatura em dia.
     if (status === 'active' || status === 'trialing') return { hasAccess: true, reason: 'active' };
     if (status === 'past_due') {
       const since = pastDueSince ?? now;

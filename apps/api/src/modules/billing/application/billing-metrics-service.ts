@@ -39,7 +39,7 @@ export class BillingMetricsService {
       churnSeries,
     ] = await Promise.all([
       SubscriptionModel.find(
-        { stripeSubscriptionId: { $exists: true, $ne: null } },
+        { $or: [{ eduzzContractId: { $ne: null } }, { activatedAt: { $ne: null } }] },
         {
           username: 1,
           plan: 1,
@@ -199,9 +199,9 @@ export class BillingMetricsService {
       const user = userByName.get(username);
       if (!user) return [];
       const sub = bySubscriber.get(username);
-      const hasStripeSubscription = Boolean(sub?.stripeSubscriptionId);
+      const hasProviderSubscription = Boolean(sub?.eduzzContractId || sub?.activatedAt);
       // Trial sem assinatura real aparece como "trial", mesmo que tenha aberto o checkout.
-      if (!hasStripeSubscription && user.origin === 'trial') {
+      if (!hasProviderSubscription && user.origin === 'trial') {
         return [
           {
             username,
@@ -214,7 +214,7 @@ export class BillingMetricsService {
             startedAt: null,
             currentPeriodEnd: null,
             cancelAtPeriodEnd: false,
-            stripeCustomerId: sub?.stripeCustomerId ?? null,
+            eduzzContractId: sub?.eduzzContractId ?? null,
             paymentsCount: 0,
             totalPaidCents: 0,
             lastPaymentAt: null,
@@ -229,13 +229,13 @@ export class BillingMetricsService {
           name: user.name,
           email: user.email ?? sub.email ?? null,
           plan: isPlanId(sub.plan) ? sub.plan : null,
-          status: (hasStripeSubscription ? sub.status : 'incomplete') as AdminSubscriptionStatus,
+          status: (hasProviderSubscription ? sub.status : 'incomplete') as AdminSubscriptionStatus,
           trialEndsAt: user.trialEndsAt?.toISOString() ?? null,
           trialExpired: false,
           startedAt: sub.startedAt?.toISOString() ?? null,
           currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
           cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
-          stripeCustomerId: sub.stripeCustomerId ?? null,
+          eduzzContractId: sub.eduzzContractId ?? null,
           paymentsCount: paid?.count ?? 0,
           totalPaidCents: paid?.total ?? 0,
           lastPaymentAt: paid?.lastPaidAt?.toISOString() ?? null,
@@ -250,9 +250,7 @@ export class BillingMetricsService {
       );
     return {
       items: filtered,
-      stripeDashboardUrl: process.env.STRIPE_SECRET_KEY?.startsWith('sk_test')
-        ? 'https://dashboard.stripe.com/test'
-        : 'https://dashboard.stripe.com',
+      providerDashboardUrl: 'https://console.eduzz.com',
     };
   }
 }
