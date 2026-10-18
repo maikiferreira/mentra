@@ -111,7 +111,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' | 'trial' }) {
       <div className="auth">
         <div className="panel">
           {brand}
-          <div>
+          <div className="auth-head">
             <h1>Quero testar o Mente Ativa</h1>
             <p className="muted">
               Acompanhe a evolução cognitiva dos seus pacientes e planeje a rotina de atividades.
@@ -177,7 +177,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' | 'trial' }) {
     <div className="auth">
       <div className="panel">
         {brand}
-        <div>
+        <div className="auth-head">
           <h1>{signup ? 'Criar conta' : 'Entrar'}</h1>
           <p className="muted">
             {signup
