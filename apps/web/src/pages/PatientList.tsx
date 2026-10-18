@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import type { PatientListDto } from '@mente-ativa/shared';
+import { patientDisplayName, type PatientListDto } from '@mente-ativa/shared';
 import { useUIStore } from '../ui-store';
 import { ErrorNote, Loading } from '../components/Feedback';
 import { client } from '../lib/client';
@@ -37,7 +37,7 @@ export function PatientList() {
                   <span className="code">{patient.id}</span>
                   <span className="pmeta">
                     <b>
-                      {patient.initials}, {patient.age} anos
+                      {patientDisplayName(patient)}, {patient.age} anos
                     </b>
                     <span className="muted">
                       {patient.group}

@@ -84,7 +84,7 @@ de desenvolvimento, rode-os contra uma API apontada para outro banco:
 
 ```bash
 MONGO_URI=mongodb://127.0.0.1:27017/mente-ativa-e2e npm run seed --workspace @mente-ativa/api
-API_PORT=3100 MONGO_URI=mongodb://127.0.0.1:27017/mente-ativa-e2e WEB_ORIGINS=http://127.0.0.1:5180 \
+PORT=3100 MONGO_URI=mongodb://127.0.0.1:27017/mente-ativa-e2e WEB_ORIGINS=http://127.0.0.1:5180 \
   npm run dev --workspace @mente-ativa/api
 (cd apps/web && VITE_API_URL=http://127.0.0.1:3100/api/v1 npx vite --host 127.0.0.1 --port 5180)
 E2E_BASE_URL=http://127.0.0.1:5180 E2E_API_URL=http://127.0.0.1:3100/api/v1 npm run test:e2e

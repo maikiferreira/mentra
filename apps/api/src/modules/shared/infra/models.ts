@@ -41,6 +41,9 @@ const suggestionStateSchema = new Schema(
 const patientSchema = new Schema(
   {
     code: { type: String, required: true, unique: true, index: true },
+    // Nome completo; pacientes cadastrados antes dele têm só as iniciais.
+    name: { type: String, default: '' },
+    // Derivadas do nome ("Maria da Silva" → "M.S.").
     initials: { type: String, required: true },
     age: { type: Number, required: true },
     educationYears: { type: Number, default: null },

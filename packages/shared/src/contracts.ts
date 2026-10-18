@@ -20,6 +20,8 @@ export interface SessionDto {
 }
 export interface PatientSummaryDto {
   id: string;
+  /** Nome completo; vazio em pacientes cadastrados só com as iniciais. */
+  name: string;
   initials: string;
   age: number;
   group: string;
@@ -37,6 +39,8 @@ export interface PatientSummaryDto {
 }
 export interface PatientDto {
   id: string;
+  /** Nome completo; vazio em pacientes cadastrados só com as iniciais. */
+  name: string;
   initials: string;
   age: number;
   educationYears: number | null;
@@ -138,6 +142,8 @@ export interface DashboardDto {
   };
   todo: Array<{
     patientId: string;
+    /** Nome completo; vazio em pacientes cadastrados só com as iniciais. */
+    name: string;
     initials: string;
     age: number;
     kind: string;
@@ -167,7 +173,13 @@ export interface FichaSavedDto {
   };
 }
 export interface RoutinesDto {
-  items: Array<{ patientId: string; initials: string; age: number; activities: RoutineItemDto[] }>;
+  items: Array<{
+    patientId: string;
+    name: string;
+    initials: string;
+    age: number;
+    activities: RoutineItemDto[];
+  }>;
 }
 export interface RoutineWeekDto {
   key: string;

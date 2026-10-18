@@ -42,6 +42,7 @@ const SETEMBRO = '2026-09-14';
 export const SEED_PATIENTS = [
   {
     code: '014',
+    name: 'Maria Souza',
     initials: 'M.S.',
     age: 78,
     educationYears: 4,
@@ -97,6 +98,7 @@ export const SEED_PATIENTS = [
   },
   {
     code: '021',
+    name: 'José Almeida',
     initials: 'J.A.',
     age: 82,
     educationYears: 8,
@@ -148,6 +150,7 @@ export const SEED_PATIENTS = [
   },
   {
     code: '009',
+    name: 'Rosa Lima',
     initials: 'R.L.',
     age: 74,
     educationYears: 11,

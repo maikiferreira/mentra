@@ -40,6 +40,7 @@ export class DashboardService {
       if (!patient.evaluations.length) {
         todo.push({
           patientId: patient.code,
+          name: patient.name ?? '',
           initials: patient.initials,
           age: patient.age,
           kind: 'first',
@@ -56,6 +57,7 @@ export class DashboardService {
       if (overdue.length) {
         todo.push({
           patientId: patient.code,
+          name: patient.name ?? '',
           initials: patient.initials,
           age: patient.age,
           kind: 'reassess',
@@ -75,6 +77,7 @@ export class DashboardService {
         recentDrops += 1;
         todo.push({
           patientId: patient.code,
+          name: patient.name ?? '',
           initials: patient.initials,
           age: patient.age,
           kind: 'drop',

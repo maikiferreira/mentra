@@ -221,7 +221,9 @@ describe('API REST v1 (integração MongoDB) ', () => {
       .post('/api/v1/patients')
       .set(auth(prof1Token))
       .send({
-        initials: ' K.K. ',
+        name: '  Kátia   dos Kunz ',
+        // Iniciais enviadas pelo cliente são ignoradas: vêm do nome.
+        initials: 'X.X.',
         age: 70,
         educationYears: 5,
         emergencyContact: { name: 'Fulano', phone: '32988887777' },
@@ -229,6 +231,7 @@ describe('API REST v1 (integração MongoDB) ', () => {
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({
       id: '022',
+      name: 'Kátia dos Kunz',
       initials: 'K.K.',
       responsibleUsername: 'prof1',
       evaluationCount: 0,
@@ -238,25 +241,41 @@ describe('API REST v1 (integração MongoDB) ', () => {
       .put('/api/v1/patients/022')
       .set(auth(prof1Token))
       .send({
-        initials: 'K.K.',
+        name: 'Kátia Kunz Lima',
         age: 70,
         educationYears: 5,
         emergencyContact: { name: 'Fulano', phone: '32988887777' },
         responsibleUsername: 'admin',
       });
-    expect(updated.body.responsibleUsername).toBe('prof1');
+    expect(updated.body).toMatchObject({
+      responsibleUsername: 'prof1',
+      name: 'Kátia Kunz Lima',
+      initials: 'K.K.L.',
+    });
+    const list = await request(app).get('/api/v1/patients').set(auth(prof1Token));
+    expect(list.body.items).toContainEqual(
+      expect.objectContaining({ id: '022', name: 'Kátia Kunz Lima', initials: 'K.K.L.' }),
+    );
   });
 
   it('RN-PAT-04: valida campos em ordem com mensagem literal e código do erro', async () => {
     const response = await request(app)
       .post('/api/v1/patients')
       .set(auth(prof1Token))
-      .send({ initials: '', age: 20 });
+      .send({ name: '', age: 20 });
     expect(response.status).toBe(422);
     expect(response.body.error).toMatchObject({
       code: 'VALIDATION_ERROR',
-      message: 'Informe as iniciais do paciente.',
-      field: 'initials',
+      message: 'Informe o nome completo do paciente.',
+      field: 'name',
+    });
+    const firstNameOnly = await request(app)
+      .post('/api/v1/patients')
+      .set(auth(prof1Token))
+      .send({ name: 'Maria', age: 70 });
+    expect(firstNameOnly.body.error).toMatchObject({
+      message: 'Informe o nome e o sobrenome do paciente.',
+      field: 'name',
     });
   });
 

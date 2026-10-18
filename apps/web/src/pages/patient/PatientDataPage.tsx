@@ -36,6 +36,7 @@ export function PatientDataPage() {
         </div>
         <h3 style={{ marginTop: 14 }}>Pessoa</h3>
         {list([
+          ['Nome completo', p.name || none],
           ['Iniciais', p.initials],
           ['Idade', `${p.age} anos`],
           ['Escolaridade', p.educationYears == null ? none : `${p.educationYears} anos de estudo`],

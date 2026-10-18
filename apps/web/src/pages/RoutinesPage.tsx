@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getInstrument, type RoutinesDto } from '@mente-ativa/shared';
+import { patientDisplayName, getInstrument, type RoutinesDto } from '@mente-ativa/shared';
 import { useUIStore } from '../ui-store';
 import { ErrorNote, Loading } from '../components/Feedback';
 import { client } from '../lib/client';
@@ -30,7 +30,7 @@ export function RoutinesPage() {
             <div className="panel" key={patient.patientId}>
               <div className="head-row">
                 <h2>
-                  {patient.patientId} · {patient.initials}, {patient.age} anos
+                  {patient.patientId} · {patientDisplayName(patient)}, {patient.age} anos
                 </h2>
                 <span className="actions">
                   <Link className="btn small" to={`/pacientes/${patient.patientId}/rotina`}>

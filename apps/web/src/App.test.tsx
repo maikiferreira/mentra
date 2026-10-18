@@ -12,6 +12,7 @@ import { useUIStore } from './ui-store';
 const user = { username: 'prof1', name: 'Profissional 1', role: 'professional' as const };
 const patient: Patient = {
   id: '014',
+  name: 'Maria Souza',
   initials: 'M.S.',
   age: 78,
   educationYears: 4,
@@ -188,9 +189,9 @@ describe('UI fase 5 — regras RN', () => {
         return response(
           {
             error: {
-              message: 'Informe as iniciais do paciente.',
+              message: 'Informe o nome completo do paciente.',
               code: 'VALIDATION_ERROR',
-              field: 'initials',
+              field: 'name',
             },
           },
           422,
@@ -203,11 +204,13 @@ describe('UI fase 5 — regras RN', () => {
     mount('/pacientes/novo');
     expect(
       await screen.findByText(
-        'Identifique o paciente só por iniciais. Endereço e telefone exigem o consentimento do paciente (LGPD).',
+        'Nome, endereço e telefone são dados pessoais: registre-os com o consentimento do paciente (LGPD).',
       ),
     ).toBeInTheDocument();
     await actor.click(screen.getByRole('button', { name: 'Salvar' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Informe as iniciais do paciente.');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Informe o nome completo do paciente.',
+    );
   });
 
   it('RN-FIC-01..05: registra ficha do MEEM pelo menu Cognição com total automático', async () => {
@@ -657,7 +660,7 @@ describe('UI fase 5 — regras RN', () => {
     useUIStore.getState().setSession({ token: 'token', user });
     const actor = userEvent.setup();
     mount('/pacientes/novo');
-    await actor.type(await screen.findByLabelText('Iniciais *'), 'K.K.');
+    await actor.type(await screen.findByLabelText('Nome completo *'), 'Kátia Kunz');
     await actor.type(screen.getByLabelText('Idade *'), '70');
     await actor.type(screen.getByLabelText('Nome *'), 'Contato de emergência');
     await actor.type(screen.getByLabelText('Telefone *'), '32988887777');
@@ -665,7 +668,7 @@ describe('UI fase 5 — regras RN', () => {
     await actor.click(screen.getByRole('button', { name: 'Salvar' }));
     expect(await screen.findByText('Nenhuma ficha registrada ainda.')).toBeInTheDocument();
     expect(submitted).toMatchObject({
-      initials: 'K.K.',
+      name: 'Kátia Kunz',
       age: 70,
       group: 'Individual',
       vision: 'Sem limitação',

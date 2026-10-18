@@ -4,6 +4,7 @@ import { type Dashboard } from '../api';
 import { useUIStore } from '../ui-store';
 import { ErrorNote, Loading } from '../components/Feedback';
 import { client, dateBR } from '../lib/client';
+import { patientDisplayName } from '@mente-ativa/shared';
 
 export function HomePage() {
   const session = useUIStore((state) => state.session)!;
@@ -68,7 +69,7 @@ export function HomePage() {
                 <div className="arow" key={`${item.patientId}-${item.kind}-${index}`}>
                   <div className="t">
                     <b>
-                      {item.patientId} · {item.initials}, {item.age} anos
+                      {item.patientId} · {patientDisplayName(item)}, {item.age} anos
                     </b>
                     <span className="muted">{item.text}</span>
                   </div>

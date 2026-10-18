@@ -8,7 +8,7 @@ import { ErrorNote, Loading } from '../components/Feedback';
 import { client, errorMessage } from '../lib/client';
 
 type PatientFormValues = {
-  initials: string;
+  name: string;
   age: string;
   educationYears: string;
   group: string;
@@ -25,7 +25,7 @@ type PatientFormValues = {
 };
 
 const blankPatient = (): PatientFormValues => ({
-  initials: '',
+  name: '',
   age: '',
   educationYears: '',
   group: PATIENT_GROUPS[0],
@@ -60,7 +60,8 @@ export function PatientFormPage({ editing = false }: { editing?: boolean }) {
     // Hydrate the edit form once after its asynchronous patient DTO arrives.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setValues({
-      initials: patient.initials,
+      // Pacientes cadastrados só com iniciais começam com o nome em branco.
+      name: patient.name,
       age: String(patient.age),
       educationYears: patient.educationYears == null ? '' : String(patient.educationYears),
       group: patient.group,
@@ -82,7 +83,7 @@ export function PatientFormPage({ editing = false }: { editing?: boolean }) {
   const save = useMutation({
     mutationFn: () => {
       const body = {
-        initials: values.initials,
+        name: values.name,
         age: values.age === '' ? '' : Number(values.age),
         educationYears: values.educationYears === '' ? null : Number(values.educationYears),
         group: values.group,
@@ -150,7 +151,7 @@ export function PatientFormPage({ editing = false }: { editing?: boolean }) {
           type={type}
           value={values[key]}
           placeholder={options?.placeholder}
-          maxLength={key === 'initials' ? 10 : undefined}
+          maxLength={key === 'name' ? 120 : undefined}
           onChange={(event) => set(key, event.target.value)}
         />
       )}{' '}
@@ -170,8 +171,8 @@ export function PatientFormPage({ editing = false }: { editing?: boolean }) {
       <div className="head">
         <h1>{editing ? `Editar dados do paciente ${id}` : 'Novo paciente'}</h1>
         <p className="muted">
-          Identifique o paciente só por iniciais. Endereço e telefone exigem o consentimento do
-          paciente (LGPD).
+          Nome, endereço e telefone são dados pessoais: registre-os com o consentimento do paciente
+          (LGPD).
         </p>
       </div>
       <div className="panel">
@@ -186,12 +187,18 @@ export function PatientFormPage({ editing = false }: { editing?: boolean }) {
           <div>
             <h3>Pessoa</h3>
             <div className="pf">
-              {field('initials', 'Iniciais *', 'text', { placeholder: 'Ex.: M.S.' })}
-              {field('age', 'Idade *', 'number', { placeholder: 'Ex.: 78' })}
-              {field('educationYears', 'Escolaridade (anos de estudo)', 'number', {
-                placeholder: 'Ex.: 4',
-                hint: 'A escolaridade ajuda a interpretar a pontuação.',
+              {field('name', 'Nome completo *', 'text', {
+                placeholder: 'Ex.: Maria da Silva',
+                full: true,
               })}
+              {/* Idade e escolaridade lado a lado, com os campos alinhados. */}
+              <div className="pf-pair">
+                {field('age', 'Idade *', 'number', { placeholder: 'Ex.: 78' })}
+                {field('educationYears', 'Escolaridade (anos de estudo)', 'number', {
+                  placeholder: 'Ex.: 4',
+                  hint: 'A escolaridade ajuda a interpretar a pontuação.',
+                })}
+              </div>
               {field('interests', 'Interesses e história de vida', 'text', {
                 full: true,
                 rows: 3,

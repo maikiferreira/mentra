@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getInstrument, type PatientOverview } from '@mente-ativa/shared';
+import { patientDisplayName, getInstrument, type PatientOverview } from '@mente-ativa/shared';
 import type { Evolution, Patient } from '../../api';
 import { useUIStore } from '../../ui-store';
 import { ErrorNote, Loading } from '../../components/Feedback';
@@ -49,7 +49,7 @@ export function ReportPage() {
       <header>
         <p className="muted">Mente Ativa · Relatório de acompanhamento</p>
         <h1>
-          Paciente {p.id} · {p.initials}
+          Paciente {p.id} · {patientDisplayName(p)}
         </h1>
         <p>
           {p.age} anos

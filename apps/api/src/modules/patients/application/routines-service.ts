@@ -19,7 +19,15 @@ export class RoutinesService {
     const items = patients.flatMap((patient) => {
       const activities = routineItems(patient);
       return activities.length
-        ? [{ patientId: patient.code, initials: patient.initials, age: patient.age, activities }]
+        ? [
+            {
+              patientId: patient.code,
+              name: patient.name ?? '',
+              initials: patient.initials,
+              age: patient.age,
+              activities,
+            },
+          ]
         : [];
     });
     return { items };

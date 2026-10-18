@@ -4,6 +4,7 @@ import { type Patient } from '../../api';
 import { Loading } from '../../components/Feedback';
 import { client } from '../../lib/client';
 import { type PatientContext } from './context';
+import { patientDisplayName } from '@mente-ativa/shared';
 
 export function PatientFrame() {
   const { id = '' } = useParams();
@@ -44,7 +45,7 @@ export function PatientFrame() {
       </div>
       <div className="head">
         <h1>
-          Paciente {patient.id} · {patient.initials}, {patient.age} anos
+          Paciente {patient.id} · {patientDisplayName(patient)}, {patient.age} anos
         </h1>
         <p className="muted">
           {patient.group}

@@ -4,6 +4,7 @@ import {
   LIMITATIONS,
   PATIENT_GROUPS,
   instrumentTrend,
+  initialsFromName,
   nextPatientCode,
 } from '@mente-ativa/shared';
 import { z } from 'zod';
@@ -14,7 +15,7 @@ import { lastRegistered, latestResults } from '../../evaluations/domain/patient-
 import type { AuthUser } from '../../shared/presentation/http.js';
 
 const patientBodySchema = z.object({
-  initials: z.unknown().optional(),
+  name: z.unknown().optional(),
   age: z.unknown().optional(),
   educationYears: z.unknown().optional(),
   interests: z.unknown().optional(),
@@ -28,6 +29,7 @@ const patientBodySchema = z.object({
   objective: z.unknown().optional(),
 });
 type PatientInput = {
+  name: string;
   initials: string;
   age: number;
   educationYears: number | null;
@@ -65,11 +67,17 @@ function validEnum(
   if (!options.includes(value)) throw validationError(message, field);
   return value;
 }
+const MAX_NAME = 120;
+
 function validatePatient(input: unknown): PatientInput {
   const body = asRecord(input);
-  const initials = text(body.initials);
-  if (!initials || initials.length > 10)
-    throw validationError('Informe as iniciais do paciente.', 'initials');
+  const name = text(body.name).replace(/\s+/g, ' ');
+  if (!name) throw validationError('Informe o nome completo do paciente.', 'name');
+  if (name.split(' ').length < 2)
+    throw validationError('Informe o nome e o sobrenome do paciente.', 'name');
+  if (name.length > MAX_NAME)
+    throw validationError(`O nome deve ter no máximo ${MAX_NAME} caracteres.`, 'name');
+  const initials = initialsFromName(name);
   const age = numeric(body.age);
   if (age === null || !Number.isInteger(age) || age < 40 || age > 110) {
     throw validationError('Informe a idade, entre 40 e 110 anos.', 'age');
@@ -117,6 +125,7 @@ function validatePatient(input: unknown): PatientInput {
       'Sem limitação',
     );
   return {
+    name,
     initials,
     age,
     educationYears,
@@ -157,6 +166,7 @@ export class PatientService {
           : undefined;
         return {
           id: patient.code,
+          name: patient.name ?? '',
           initials: patient.initials,
           age: patient.age,
           group: patient.group,
@@ -191,6 +201,7 @@ export class PatientService {
     ).lean();
     return {
       id: patient.code,
+      name: patient.name ?? '',
       initials: patient.initials,
       age: patient.age,
       educationYears: patient.educationYears ?? null,

@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { weekStart } from '@mente-ativa/shared';
+import { patientDisplayName, weekStart } from '@mente-ativa/shared';
 import type { Evolution, Patient } from '../../api';
 import { ErrorNote, Loading } from '../../components/Feedback';
 import { client } from '../../lib/client';
@@ -37,8 +37,9 @@ export function PrintRoutinePage() {
       </div>
       <h1>Rotina de atividades</h1>
       <p className="muted">
-        Paciente {patient.data!.id} · {patient.data!.initials}, {patient.data!.age} anos · Semana de{' '}
-        {isoToBR(monday)} a {isoToBR(sunday)} · Responsável: {patient.data!.responsibleName}
+        Paciente {patient.data!.id} · {patientDisplayName(patient.data!)}, {patient.data!.age} anos
+        · Semana de {isoToBR(monday)} a {isoToBR(sunday)} · Responsável:{' '}
+        {patient.data!.responsibleName}
       </p>
       {patient.data!.interests && (
         <p className="muted">Para personalizar as atividades: {patient.data!.interests}</p>

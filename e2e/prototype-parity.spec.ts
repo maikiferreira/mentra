@@ -31,8 +31,8 @@ test('RN-AUTH-01/RN-PAT-01/RN-FIC-01..05/RN-EVO-03..07: demo principal mantém f
   await expect(page.getByText('Pacientes com queda recente')).toBeVisible();
 
   await page.getByRole('link', { name: 'Pacientes', exact: true }).click();
-  await expect(page.getByRole('link', { name: /014 M\.S\., 78 anos/ })).toBeVisible();
-  await page.getByRole('link', { name: /014 M\.S\., 78 anos/ }).click();
+  await expect(page.getByRole('link', { name: /014 Maria Souza, 78 anos/ })).toBeVisible();
+  await page.getByRole('link', { name: /014 Maria Souza, 78 anos/ }).click();
   await expect(page.getByRole('heading', { name: /Paciente 014/ })).toBeVisible();
   await page.getByRole('button', { name: 'Registrar nova ficha' }).click();
   await page.getByRole('button', { name: /^MEEM/ }).click();
@@ -53,7 +53,7 @@ test('RN-AUTH-01/RN-PAT-01/RN-FIC-01..05/RN-EVO-03..07: demo principal mantém f
   await page.getByRole('button', { name: 'Aceitar' }).first().click();
   await expect(page.getByText('Na rotina').first()).toBeVisible();
   await page.getByRole('link', { name: 'Rotinas', exact: true }).click();
-  await expect(page.getByText('014 · M.S., 78 anos')).toBeVisible();
+  await expect(page.getByText('014 · Maria Souza, 78 anos')).toBeVisible();
 });
 
 test('RN-PAT-02/RN-PAT-04/RN-PAT-07/RN-PAT-08: cria e exclui paciente sem avaliações', async ({
@@ -61,7 +61,7 @@ test('RN-PAT-02/RN-PAT-04/RN-PAT-07/RN-PAT-08: cria e exclui paciente sem avalia
 }) => {
   await signInAsAdmin(page);
   await page.getByRole('link', { name: 'Novo paciente', exact: true }).click();
-  await page.getByLabel('Iniciais *').fill('K.K.');
+  await page.getByLabel('Nome completo *').fill('Kátia Kunz');
   await page.getByLabel('Idade *').fill('70');
   await page.getByLabel('Nome *').fill('Contato fictício');
   await page.getByLabel('Telefone *').fill('32988887777');
