@@ -26,8 +26,6 @@ export async function seedDatabase() {
       {
         $setOnInsert: {
           ...patient,
-          generationCursor: 0,
-          pending: null,
           suggestionStates: [],
         },
       },

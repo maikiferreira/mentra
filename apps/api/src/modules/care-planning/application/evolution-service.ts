@@ -1,15 +1,18 @@
 import {
-  MEEM_DOMAINS,
-  calculateDomainFlags,
-  calculateTrend,
-  generateSuggestions,
-  totalScore,
-  type MeemScores,
+  sectionMax,
+  sectionValue,
+  type InstrumentDefinition,
+  type StoredEvaluation,
 } from '@mente-ativa/shared';
 import { z } from 'zod';
 import { notFound, validationError } from '../../shared/kernel/errors.js';
 import { PatientModel } from '../../shared/infra/models.js';
 import { PatientService } from '../../patients/application/patient-service.js';
+import {
+  latestResults,
+  patientSuggestions,
+  storedEvaluations,
+} from '../../evaluations/domain/patient-evaluations.js';
 import type { AuthUser } from '../../shared/presentation/http.js';
 
 const suggestionChangeSchema = z
@@ -24,16 +27,13 @@ export class EvolutionService {
 
   async get(user: AuthUser, code: string) {
     const patient = await this.patients.findVisible(user, code);
-    const evaluations = patient.evaluations.map((entry) => ({
-      date: entry.date,
-      scores: entry.scores as MeemScores,
-    }));
-    const suggestions = generateSuggestions({ id: patient.code, evaluations });
+    const evaluations = storedEvaluations(patient);
     const stateByKey = new Map(patient.suggestionStates.map((state) => [state.key, state]));
-    const suggestionDtos = suggestions.map((suggestion) => {
+    const suggestions = patientSuggestions(patient).map((suggestion) => {
       const state = stateByKey.get(suggestion.key);
       return {
         key: suggestion.key,
+        instrument: suggestion.instrument,
         title: suggestion.activity.title,
         defaultText: suggestion.activity.text,
         duration: suggestion.activity.duration,
@@ -46,59 +46,38 @@ export class EvolutionService {
         state: { status: state?.status ?? 'open', customText: state?.customText ?? null },
       };
     });
-    const routine = suggestionDtos
+    const routine = suggestions
       .filter((suggestion) => suggestion.state.status === 'ok')
       .map((suggestion) => ({
         key: suggestion.key,
+        instrument: suggestion.instrument,
         title: suggestion.title,
         text: suggestion.state.customText ?? suggestion.defaultText,
         duration: suggestion.duration,
         frequency: suggestion.frequency,
       }));
-    const response: Record<string, unknown> = {
-      hasPending: Boolean(patient.pending),
-      pendingDate: patient.pending?.date ?? null,
-      suggestions: suggestionDtos,
+    const instruments = latestResults(patient).map(({ definition, date, result, trend }) => {
+      const own = evaluations.filter((entry) => entry.instrument === definition.key);
+      return {
+        key: definition.key,
+        name: definition.name,
+        shortName: definition.shortName,
+        category: definition.category,
+        max: definition.max,
+        higherIsBetter: definition.higherIsBetter,
+        totalLabel: definition.totalLabel,
+        series: own.map((entry) => ({ date: entry.date, total: definition.score(entry.scores) })),
+        latest: { date, ...result },
+        trend,
+        ...(own.length >= 2 ? { delta: deltaRows(definition, own.at(-2)!, own.at(-1)!) } : {}),
+      };
+    });
+    return {
+      instruments,
+      latestInstrument: evaluations.at(-1)?.instrument ?? null,
+      suggestions,
       routine,
     };
-    if (evaluations.length) {
-      response.series = evaluations.map((evaluation) => ({
-        date: evaluation.date,
-        total: totalScore(evaluation.scores),
-      }));
-    }
-    if (evaluations.length >= 2) {
-      const previous = evaluations[evaluations.length - 2]!;
-      const last = evaluations[evaluations.length - 1]!;
-      response.delta = {
-        previousDate: previous.date,
-        lastDate: last.date,
-        rows: MEEM_DOMAINS.map((domain) => {
-          const before = previous.scores[domain.key]!;
-          const after = last.scores[domain.key]!;
-          const difference = after - before;
-          return {
-            domain: domain.key,
-            name: domain.name,
-            previous: before,
-            last: after,
-            max: domain.max,
-            kind: difference > 0 ? 'up' : difference < 0 ? 'down' : 'same',
-            label:
-              difference > 0
-                ? `▲ subiu ${difference}`
-                : difference < 0
-                  ? `▼ caiu ${Math.abs(difference)}`
-                  : '● igual',
-          };
-        }),
-      };
-      response.flags = calculateDomainFlags(evaluations);
-      response.trend = calculateTrend(evaluations);
-    } else {
-      response.trend = calculateTrend(evaluations);
-    }
-    return response;
   }
 
   async updateSuggestion(user: AuthUser, code: string, key: string, input: unknown) {
@@ -106,13 +85,7 @@ export class EvolutionService {
     if (!parsed.success)
       throw validationError('Informe um status ou um texto personalizado.', 'status');
     const patient = await this.patients.findVisible(user, code);
-    const suggestions = generateSuggestions({
-      id: patient.code,
-      evaluations: patient.evaluations.map((entry) => ({
-        date: entry.date,
-        scores: entry.scores as MeemScores,
-      })),
-    });
+    const suggestions = patientSuggestions(patient);
     if (!suggestions.some((suggestion) => suggestion.key === key)) throw notFound();
     const existing = patient.suggestionStates.find((state) => state.key === key);
     const current = existing?.toObject ? existing.toObject() : existing;
@@ -134,4 +107,37 @@ export class EvolutionService {
       );
     return { key, status: nextState.status, customText: nextState.customText };
   }
+}
+
+function deltaRows(
+  definition: InstrumentDefinition,
+  previous: StoredEvaluation,
+  last: StoredEvaluation,
+) {
+  const format = (value: number) => String(value).replace('.', ',');
+  return {
+    previousDate: previous.date,
+    lastDate: last.date,
+    rows: definition.sections.map((section) => {
+      const before = sectionValue(definition, section.key, previous.scores);
+      const after = sectionValue(definition, section.key, last.scores);
+      const difference = after - before;
+      const improved = difference > 0 === definition.higherIsBetter;
+      return {
+        key: section.key,
+        name: section.name,
+        previous: before,
+        last: after,
+        max: sectionMax(definition, section.key),
+        kind: difference > 0 ? 'up' : difference < 0 ? 'down' : 'same',
+        tone: difference === 0 ? 'neutral' : improved ? 'good' : 'bad',
+        label:
+          difference > 0
+            ? `▲ subiu ${format(difference)}`
+            : difference < 0
+              ? `▼ caiu ${format(Math.abs(difference))}`
+              : '● igual',
+      };
+    }),
+  };
 }

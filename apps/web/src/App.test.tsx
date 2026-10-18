@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
-import type { Patient, PendingFicha } from './api';
+import type { Patient } from './api';
 import { useUIStore } from './ui-store';
 
 const user = { username: 'prof1', name: 'Profissional 1', role: 'professional' as const };
@@ -26,29 +26,29 @@ const patient: Patient = {
   objective: 'Acompanhar',
   responsibleUsername: 'prof1',
   responsibleName: 'Profissional 1',
-  hasPending: false,
   evaluationCount: 0,
 };
-const pending: PendingFicha = {
-  date: '17/10/2026',
-  scores: { ori: 9, reg: 3, ate: 4, evo: 2, lin: 8 },
-  writtenTotal: 26,
-  flag: 'ate',
-  observations: 'Primeira avaliação. Colaborou bem durante a sessão.',
-  sheetLines: [
-    { id: 'l0', title: 'Ficha de avaliação' },
-    { id: 'l1', left: 'Data: 17/10/2026', right: 'Pac. 014' },
-    { id: 'l2', left: 'Instrumento: MEEM' },
-    { id: 'l3', left: 'Orientação', right: '9 /10' },
-    { id: 'l4', left: 'Memória imediata', right: '3 /3' },
-    { id: 'l5', left: 'Atenção e cálculo', right: '4 /5' },
-    { id: 'l6', left: 'Evocação', right: '2 /3' },
-    { id: 'l7', left: 'Linguagem', right: '8 /9' },
-    { id: 'l8', left: 'Total', right: '26 /30' },
-    { id: 'l9', left: 'Obs: Primeira avaliação.' },
-  ],
-};
-
+function meemEvolution(series: Array<{ date: string; total: number }>) {
+  const last = series.at(-1)!;
+  return {
+    key: 'meem',
+    name: 'Mini Exame do Estado Mental (MEEM)',
+    shortName: 'MEEM',
+    category: 'cognicao',
+    max: 30,
+    higherIsBetter: true,
+    totalLabel: 'Total',
+    series,
+    latest: {
+      date: last.date,
+      total: last.total,
+      max: 30,
+      level: 'ok',
+      label: 'Dentro do esperado.',
+    },
+    trend: { kind: 'first', label: 'primeira avaliação', delta: null, tone: 'neutral' },
+  };
+}
 function response(payload: unknown, status = 200) {
   return new Response(status === 204 ? null : JSON.stringify(payload), {
     status,
@@ -78,34 +78,25 @@ function authFetch(url: string) {
           group: 'Grupo da manhã',
           responsibleUsername: 'prof1',
           lastEvaluationDate: null,
-          lastTotal: null,
-          trend: { kind: 'none', label: 'sem avaliações', delta: null },
-          hasPending: false,
+          lastResult: null,
+          trend: { kind: 'none', label: 'sem avaliações', delta: null, tone: 'neutral' },
         },
       ],
     });
   if (route === '/patients/014') return response(patient);
-  if (route === '/patients/014/fichas') return response({ evaluations: [], pending: null });
+  if (route === '/patients/014/fichas') return response({ evaluations: [] });
   if (route === '/dashboard/summary')
     return response({
       greetingName: user.name,
-      kpis: { patients: 0, pendingFichas: 0, recentDrops: 0, routineActivities: 0 },
+      kpis: { patients: 0, recentDrops: 0, routineActivities: 0 },
       todo: [],
     });
-  if (route === '/patients/014/fichas/upload') return response({ pending }, 201);
-  if (route === '/patients/014/fichas/pending/confirm')
-    return response(
-      { justConfirmed: pending.date, evaluation: { date: pending.date, total: 26 } },
-      201,
-    );
   if (route === '/patients/014/evolution')
     return response({
-      hasPending: false,
-      pendingDate: null,
+      instruments: [meemEvolution([{ date: '17/10/2026', total: 26 }])],
+      latestInstrument: 'meem',
       suggestions: [],
       routine: [],
-      series: [{ date: pending.date, total: 26 }],
-      trend: { kind: 'first', label: 'primeira avaliação', delta: null },
     });
   return response({ error: { message: 'Not found', code: 'NOT_FOUND' } }, 404);
 }
@@ -138,7 +129,7 @@ describe('UI fase 5 — regras RN', () => {
       if (route === '/dashboard/summary')
         return response({
           greetingName: user.name,
-          kpis: { patients: 0, pendingFichas: 0, recentDrops: 0, routineActivities: 0 },
+          kpis: { patients: 0, recentDrops: 0, routineActivities: 0 },
           todo: [],
         });
       if (route === '/patients') return response({ items: [] });
@@ -219,39 +210,91 @@ describe('UI fase 5 — regras RN', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Informe as iniciais do paciente.');
   });
 
-  it('RN-FIC-03/RN-FIC-04/RN-FIC-07: espera upload de 1,1 s, três etapas e exige flag + soma para confirmar', async () => {
-    vi.mocked(fetch).mockImplementation(async (input) => {
+  it('RN-FIC-01..05: registra ficha do MEEM pelo menu Cognição com total automático', async () => {
+    let submitted: Record<string, unknown> | undefined;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
       const route = new URL(String(input)).pathname.replace('/api/v1', '');
-      if (route === '/auth/me') return response({ user });
+      if (route === '/patients/014/fichas' && init?.method === 'POST') {
+        submitted = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return response({ evaluation: { date: '17/10/2026', total: 26 } }, 201);
+      }
       return authFetch(String(input));
     });
     useUIStore.getState().setSession({ token: 'token', user });
     const actor = userEvent.setup();
     mount('/pacientes/014');
-    await actor.click(await screen.findByRole('button', { name: 'Enviar nova ficha' }));
-    expect(await screen.findByText('Recebendo a ficha…')).toBeInTheDocument();
-    expect(
-      await screen.findByText('Extrair dados com IA', {}, { timeout: 3000 }),
-    ).toBeInTheDocument();
-    await actor.click(screen.getByRole('button', { name: 'Extrair dados com IA' }));
-    expect(await screen.findByText('Extraindo…')).toBeInTheDocument();
-    expect(await screen.findByText('Dados extraídos', {}, { timeout: 5000 })).toBeInTheDocument();
-    const confirm = screen.getByRole('button', { name: 'Confirmar ficha e atualizar evolução' });
-    expect(confirm).toBeDisabled();
-    await actor.click(screen.getByRole('button', { name: 'Está correto' }));
-    expect(confirm).toBeEnabled();
-    await actor.clear(screen.getByLabelText('Orientação (máx. 10)'));
-    await actor.type(screen.getByLabelText('Orientação (máx. 10)'), '8');
-    expect(screen.getByRole('status')).toHaveTextContent('é diferente do total escrito');
-    expect(confirm).toBeDisabled();
-    await actor.clear(screen.getByLabelText('Orientação (máx. 10)'));
-    await actor.type(screen.getByLabelText('Orientação (máx. 10)'), '9');
-    expect(confirm).toBeEnabled();
-    await actor.click(confirm);
+    await actor.click(await screen.findByRole('button', { name: 'Registrar nova ficha' }));
+    expect(screen.getByRole('tab', { name: 'Cognição' })).toHaveAttribute('aria-selected', 'true');
+    await actor.click(screen.getByRole('button', { name: /^MEEM/ }));
+    const save = screen.getByRole('button', { name: 'Salvar ficha e atualizar evolução' });
+    expect(save).toBeDisabled();
+    expect(screen.getByLabelText('Data da avaliação')).toHaveValue(
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()),
+    );
+    fireEvent.change(screen.getByLabelText('Data da avaliação'), {
+      target: { value: '2026-10-17' },
+    });
+    await actor.type(screen.getByLabelText('Orientação temporal e espacial (máx. 10)'), '9');
+    await actor.type(screen.getByLabelText('Memória imediata (registro) (máx. 3)'), '3');
+    await actor.type(screen.getByLabelText('Atenção e cálculo (máx. 5)'), '4');
+    await actor.type(screen.getByLabelText('Evocação (máx. 3)'), '2');
+    const language = screen.getByLabelText('Linguagem e praxia construtiva (máx. 9)');
+    await actor.type(language, '12');
+    expect(screen.getByText('Use um número inteiro de 0 a 9.')).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    await actor.clear(language);
+    await actor.type(language, '8');
+    // Escolaridade 4 anos: nota de corte 25 do e-book.
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Total: 26/30 · Dentro do esperado para a escolaridade (nota de corte 25).',
+    );
+    expect(save).toBeEnabled();
+    await actor.type(screen.getByLabelText('Observações'), 'Colaborou bem.');
+    await actor.click(save);
     expect(
       await screen.findByRole('heading', { name: 'Evolução do total (MEEM)' }),
     ).toBeInTheDocument();
-  }, 12000);
+    expect(submitted).toEqual({
+      instrument: 'meem',
+      date: '2026-10-17',
+      scores: { ori: 9, reg: 3, ate: 4, evo: 2, lin: 8 },
+      observations: 'Colaborou bem.',
+    });
+  });
+
+  it('RN-TST-01: menu Humor › GDS-15 pontua as respostas do e-book e envia a ficha', async () => {
+    let submitted: Record<string, unknown> | undefined;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const route = new URL(String(input)).pathname.replace('/api/v1', '');
+      if (route === '/patients/014/fichas' && init?.method === 'POST') {
+        submitted = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return response({ evaluation: { date: '17/10/2026', total: 10 } }, 201);
+      }
+      return authFetch(String(input));
+    });
+    useUIStore.getState().setSession({ token: 'token', user });
+    const actor = userEvent.setup();
+    mount('/pacientes/014');
+    await actor.click(await screen.findByRole('button', { name: 'Registrar nova ficha' }));
+    await actor.click(screen.getByRole('tab', { name: 'Humor' }));
+    expect(screen.queryByRole('button', { name: /^MEEM/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Ansiedade geriátrica/ })).toBeInTheDocument();
+    await actor.click(screen.getByRole('button', { name: /^GDS-15/ }));
+    expect(screen.getByRole('heading', { name: 'Nova ficha · GDS-15' })).toBeInTheDocument();
+    const questions = screen.getAllByRole('group');
+    expect(questions).toHaveLength(15);
+    for (const question of questions.slice(0, 14))
+      await actor.click(within(question).getByLabelText('Sim'));
+    expect(screen.getByRole('status')).toHaveTextContent('responda todos os itens');
+    await actor.click(within(questions[14]!).getByLabelText('Sim'));
+    // "Sim" em tudo: só as perguntas 1, 5, 7, 11 e 13 deixam de pontuar.
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Total: 10/15 · 5 ou mais: indicativo de sintomas depressivos.',
+    );
+    await actor.click(screen.getByRole('button', { name: 'Salvar ficha e atualizar evolução' }));
+    await waitFor(() => expect(submitted).toBeDefined());
+    expect(submitted).toMatchObject({ instrument: 'gds', scores: { q1: 1, q15: 1 } });
+  });
 
   it('RN-AUTH-03: cadastro profissional autentica e redireciona para Início', async () => {
     vi.mocked(fetch).mockImplementation(async (input) => {
@@ -261,7 +304,7 @@ describe('UI fase 5 — regras RN', () => {
       if (route === '/dashboard/summary')
         return response({
           greetingName: user.name,
-          kpis: { patients: 0, pendingFichas: 0, recentDrops: 0, routineActivities: 0 },
+          kpis: { patients: 0, recentDrops: 0, routineActivities: 0 },
           todo: [],
         });
       if (route === '/patients') return response({ items: [] });
@@ -295,7 +338,7 @@ describe('UI fase 5 — regras RN', () => {
       if (route === '/patients/022')
         return response({ ...patient, id: '022', initials: 'K.K.', age: 70, evaluationCount: 0 });
       if (route === '/patients') return response({ items: [] });
-      if (route === '/patients/022/fichas') return response({ evaluations: [], pending: null });
+      if (route === '/patients/022/fichas') return response({ evaluations: [] });
       return response({});
     });
     useUIStore.getState().setSession({ token: 'token', user });
@@ -307,7 +350,7 @@ describe('UI fase 5 — regras RN', () => {
     await actor.type(screen.getByLabelText('Telefone *'), '32988887777');
     expect(screen.getByDisplayValue('Profissional 1')).toHaveAttribute('readonly');
     await actor.click(screen.getByRole('button', { name: 'Salvar' }));
-    expect(await screen.findByText('Nenhuma ficha enviada ainda.')).toBeInTheDocument();
+    expect(await screen.findByText('Nenhuma ficha registrada ainda.')).toBeInTheDocument();
     expect(submitted).toMatchObject({
       initials: 'K.K.',
       age: 70,
@@ -339,9 +382,8 @@ describe('UI fase 5 — regras RN', () => {
                   group: 'Grupo da manhã',
                   responsibleUsername: 'prof1',
                   lastEvaluationDate: null,
-                  lastTotal: null,
-                  trend: { kind: 'none', label: 'sem avaliações', delta: null },
-                  hasPending: false,
+                  lastResult: null,
+                  trend: { kind: 'none', label: 'sem avaliações', delta: null, tone: 'neutral' },
                 },
               ],
         });
@@ -368,6 +410,7 @@ describe('UI fase 5 — regras RN', () => {
     let accepted = false;
     const suggestion = () => ({
       key: '014:ate',
+      instrument: 'meem',
       title: 'Atenção sustentada: cancelamento de figuras',
       defaultText: 'Atividade original.',
       duration: '10 min',
@@ -385,13 +428,12 @@ describe('UI fase 5 — regras RN', () => {
       if (route === '/patients/014') return response(patient);
       if (route === '/patients/014/evolution')
         return response({
-          hasPending: false,
-          pendingDate: null,
           suggestions: [suggestion()],
           routine: accepted
             ? [
                 {
                   key: '014:ate',
+                  instrument: 'meem',
                   title: suggestion().title,
                   text: suggestion().defaultText,
                   duration: suggestion().duration,
@@ -399,11 +441,13 @@ describe('UI fase 5 — regras RN', () => {
                 },
               ]
             : [],
-          series: [
-            { date: '06/2026', total: 26 },
-            { date: '09/2026', total: 23 },
+          instruments: [
+            meemEvolution([
+              { date: '06/2026', total: 26 },
+              { date: '09/2026', total: 23 },
+            ]),
           ],
-          trend: { kind: 'down', label: '▼ caiu 3', delta: -3 },
+          latestInstrument: 'meem',
         });
       if (
         decodeURIComponent(route) === '/patients/014/suggestions/014:ate' &&

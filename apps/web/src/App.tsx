@@ -14,11 +14,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   EMERGENCY_RELATIONSHIPS,
   LIMITATIONS,
-  MEEM_DOMAINS,
   PATIENT_GROUPS,
+  INSTRUMENT_CATEGORIES,
+  INSTRUMENTS,
   TRIAL_PROFILES,
-  totalScore,
-  type MeemScores,
+  evaluateInstrument,
+  getInstrument,
+  type InstrumentCategory,
+  type InstrumentDefinition,
+  type InstrumentField,
+  type InstrumentKey,
+  type InstrumentScores,
+  type ResultLevel,
+  type TrendResult,
 } from '@mente-ativa/shared';
 import logo from './assets/logo.jpg';
 import {
@@ -27,9 +35,9 @@ import {
   type Dashboard,
   type Evaluation,
   type Evolution,
+  type InstrumentEvolution,
   type Patient,
   type PatientSummary,
-  type PendingFicha,
   type Session,
   type Suggestion,
 } from './api';
@@ -37,8 +45,6 @@ import { useUIStore } from './ui-store';
 
 const client = <T,>(path: string, options?: RequestInit): Promise<T> =>
   api<T>(path, options, useUIStore.getState().session?.token);
-const wait = (milliseconds: number) =>
-  new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 const dateBR = () =>
   new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 const shortDate = (date: string) => date.split(' ')[0];
@@ -158,11 +164,6 @@ function AppShell({ children }: { children: ReactNode }) {
   const logout = useUIStore((state) => state.logout);
   const queryClient = useQueryClient();
   const location = useLocation();
-  const patients = useQuery({
-    queryKey: ['patients', session.user.username],
-    queryFn: () => client<{ items: PatientSummary[] }>('/patients'),
-  });
-  const pendingCount = patients.data?.items?.filter((item) => item.hasPending).length ?? 0;
   const active =
     location.pathname === '/'
       ? 'home'
@@ -220,7 +221,6 @@ function AppShell({ children }: { children: ReactNode }) {
             >
               {icon[key]}
               <span>{label}</span>
-              {key === 'list' && pendingCount > 0 && <span className="cnt">{pendingCount}</span>}
             </Link>
           ))}
         </nav>
@@ -507,15 +507,14 @@ function PatientList() {
                     </span>
                   </span>
                   <span className="score">
-                    {patient.lastTotal === null ? '—' : `MEEM ${patient.lastTotal}/30`}
+                    {patient.lastResult
+                      ? `${patient.lastResult.instrumentName} ${scoreText(patient.lastResult.total, patient.lastResult.max)}`
+                      : '—'}
                   </span>
                   <span className="tr">
-                    <span
-                      className={`chip ${patient.trend.kind === 'up' ? 'up' : patient.trend.kind === 'down' ? 'down' : ''}`}
-                    >
+                    <span className={`chip ${TONE_CHIP[patient.trend.tone]}`}>
                       {patient.trend.label}
-                    </span>{' '}
-                    {patient.hasPending && <span className="chip warn">1 ficha nova</span>}
+                    </span>
                   </span>
                 </Link>
               ))
@@ -828,8 +827,7 @@ function PatientFrame() {
         <p className="muted">
           {patient.group}
           {patient.educationYears != null ? ` · ${patient.educationYears} anos de estudo` : ''} ·
-          Responsável: {patient.responsibleName || patient.responsibleUsername} · Instrumento de
-          exemplo: MEEM (0 a 30)
+          Responsável: {patient.responsibleName || patient.responsibleUsername}
         </p>
       </div>
       <div className="tabs" role="tablist" aria-label="Seções do paciente">
@@ -863,43 +861,95 @@ function PatientFrame() {
   );
 }
 
-function PatientFichas() {
-  const { id } = usePatientContext();
+const todayISO = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+const formatScore = (value: number) => String(value).replace('.', ',');
+const scoreText = (total: number, max: number | null) =>
+  max === null ? formatScore(total) : `${formatScore(total)}/${formatScore(max)}`;
+const LEVEL_CHIP: Record<ResultLevel, string> = {
+  ok: 'up',
+  attention: 'warn',
+  alert: 'down',
+  info: '',
+};
+const LEVEL_NAME: Record<ResultLevel, string> = {
+  ok: 'Esperado',
+  attention: 'Atenção',
+  alert: 'Alerta',
+  info: 'Sem referência',
+};
+const TONE_CHIP: Record<TrendResult['tone'], string> = { good: 'up', bad: 'down', neutral: '' };
+/** Quantidades sem máximo próprio no teste (ex.: palavras em 1 minuto). */
+const MAX_COUNT = 99;
+
+/** Rascunho do formulário: números e escolhas como texto, '' = ainda sem resposta. */
+type Draft = Record<string, string>;
+function initialDraft(definition: InstrumentDefinition, patient: Patient): Draft {
+  return Object.fromEntries(
+    definition.fields.map((field) => {
+      if (field.kind !== 'check') return [field.key, ''];
+      // MoCA: já marca o ponto de escolaridade quando o cadastro indica 12 anos ou menos.
+      const bonus =
+        definition.key === 'moca' &&
+        field.key === 'esc' &&
+        patient.educationYears !== null &&
+        patient.educationYears <= 12;
+      return [field.key, bonus ? '1' : '0'];
+    }),
+  );
+}
+function parseDraft(definition: InstrumentDefinition, draft: Draft) {
+  const scores: InstrumentScores = {};
+  const invalid = new Set<string>();
+  let missing = 0;
+  for (const field of definition.fields) {
+    const raw = draft[field.key] ?? '';
+    if (raw === '') {
+      missing += 1;
+      continue;
+    }
+    if (field.kind === 'number' && (!/^\d+$/.test(raw) || Number(raw) > (field.max ?? MAX_COUNT))) {
+      invalid.add(field.key);
+      continue;
+    }
+    scores[field.key] = Number(raw);
+  }
+  return { scores, invalid, missing };
+}
+
+function InstrumentForm({
+  definition,
+  patient,
+  id,
+  onBack,
+  onCancel,
+}: {
+  definition: InstrumentDefinition;
+  patient: Patient;
+  id: string;
+  onBack: () => void;
+  onCancel: () => void;
+}) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [uploading, setUploading] = useState(false);
-  const [extracting, setExtracting] = useState(false);
-  const [step, setStep] = useState(0);
-  const [pendingOverride, setPendingOverride] = useState<PendingFicha | null>(null);
-  const [scores, setScores] = useState<MeemScores | null>(null);
+  const [date, setDate] = useState(todayISO);
+  const [draft, setDraft] = useState<Draft>(() => initialDraft(definition, patient));
   const [observations, setObservations] = useState('');
-  const [flagConfirmed, setFlagConfirmed] = useState(false);
-  const [highlight, setHighlight] = useState<string | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  const fichasQuery = useQuery({
-    queryKey: ['fichas', id],
-    queryFn: () =>
-      client<{ evaluations: Evaluation[]; pending: PendingFicha | null }>(`/patients/${id}/fichas`),
+  const parsed = parseDraft(definition, draft);
+  const complete = Boolean(date) && parsed.missing === 0 && parsed.invalid.size === 0;
+  const preview = evaluateInstrument(definition, parsed.scores, {
+    educationYears: patient.educationYears,
   });
-  const data = fichasQuery.data;
-  const pending = pendingOverride ?? data?.pending ?? null;
-  useEffect(() => {
-    if (!pending) return;
-    // Resume an existing pending ficha from its API DTO when reopening the route.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setScores((current) => current ?? { ...pending.scores });
-    setObservations((current) => current || pending.observations);
-  }, [pending]);
-  const total = scores ? totalScore(scores) : 0;
-  const sumMatches = Boolean(pending && total === pending.writtenTotal);
-  const confirm = useMutation({
+  const change = (key: string, value: string) =>
+    setDraft((current) => ({ ...current, [key]: value }));
+  const save = useMutation({
     mutationFn: () =>
-      client<{ justConfirmed: string }>(`/patients/${id}/fichas/pending/confirm`, {
+      client<{ evaluation: { date: string } }>(`/patients/${id}/fichas`, {
         method: 'POST',
-        body: jsonBody({ scores, observations, flagConfirmed }),
+        body: jsonBody({ instrument: definition.key, date, scores: parsed.scores, observations }),
       }),
-    onSuccess: async (result: { justConfirmed: string }) => {
-      useUIStore.getState().markConfirmed(id, result.justConfirmed);
+    onSuccess: async ({ evaluation }) => {
+      useUIStore.getState().markRegistered(id, evaluation.date);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['fichas', id] }),
         queryClient.invalidateQueries({ queryKey: ['patient', id] }),
@@ -907,202 +957,256 @@ function PatientFichas() {
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
         queryClient.invalidateQueries({ queryKey: ['evolution', id] }),
       ]);
-      navigate(`/pacientes/${id}/evolucao`);
+      navigate(`/pacientes/${id}/evolucao`, { state: { instrument: definition.key } });
     },
   });
-  const upload = async () => {
-    setUploading(true);
-    setError(null);
-    try {
-      const response = await client<{ pending: PendingFicha }>(`/patients/${id}/fichas/upload`, {
-        method: 'POST',
-        body: '{}',
-      });
-      await wait(1100);
-      setPendingOverride(response.pending);
-      setScores({ ...response.pending.scores });
-      setObservations(response.pending.observations);
-      setFlagConfirmed(false);
-      await queryClient.invalidateQueries({ queryKey: ['fichas', id] });
-    } catch (uploadError) {
-      setError(uploadError);
-      await queryClient.invalidateQueries({ queryKey: ['fichas', id] });
-    } finally {
-      setUploading(false);
+  // Seções com mais de um campo viram blocos com título (ex.: Contorno, Números do relógio).
+  const grouped = definition.sections.length > 1;
+  const questionNumber = new Map(
+    definition.fields
+      .filter((field) => field.kind === 'choice')
+      .map((field, index) => [field.key, index + 1]),
+  );
+  const renderField = (field: InstrumentField) => {
+    const value = draft[field.key] ?? '';
+    if (field.kind === 'check')
+      return (
+        <label className="fld-check" key={field.key}>
+          <input
+            type="checkbox"
+            checked={value === '1'}
+            onChange={(event) => change(field.key, event.target.checked ? '1' : '0')}
+          />
+          <span>{field.label}</span>
+        </label>
+      );
+    if (field.kind === 'choice') {
+      return (
+        <fieldset className="fld-choice" key={field.key}>
+          <legend>
+            {questionNumber.get(field.key)}. {field.label}
+          </legend>
+          <div
+            className={`opts ${field.options!.some((option) => option.description) ? 'long' : ''}`}
+          >
+            {field.options!.map((option) => (
+              <label
+                className={`opt ${value === String(option.value) ? 'on' : ''}`}
+                key={option.value}
+              >
+                <input
+                  type="radio"
+                  name={`f-${field.key}`}
+                  value={option.value}
+                  checked={value === String(option.value)}
+                  onChange={() => change(field.key, String(option.value))}
+                />
+                <span>
+                  <b>{option.label}</b>
+                  {option.description && <small>{option.description}</small>}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      );
     }
+    const invalid = parsed.invalid.has(field.key);
+    const max = field.max ?? MAX_COUNT;
+    return (
+      <div className={`fld ${invalid ? 'invalid' : ''}`} key={field.key}>
+        <div>
+          <label htmlFor={`f-${field.key}`}>
+            {field.label}
+            {field.max !== undefined ? ` (máx. ${field.max})` : ''}
+          </label>
+          {invalid && <small>Use um número inteiro de 0 a {max}.</small>}
+        </div>
+        <input
+          id={`f-${field.key}`}
+          type="number"
+          inputMode="numeric"
+          required
+          min={0}
+          max={max}
+          step={1}
+          aria-invalid={invalid}
+          value={value}
+          onChange={(event) => change(field.key, event.target.value)}
+        />
+      </div>
+    );
   };
-  const extract = async () => {
-    setExtracting(true);
-    setStep(0);
-    for (let index = 1; index <= 3; index += 1) {
-      await wait(650);
-      setStep(index);
-    }
-    setExtracting(false);
-  };
+  return (
+    <form
+      className="panel"
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (complete) save.mutate();
+      }}
+    >
+      <div className="head-row">
+        <h2>Nova ficha · {definition.shortName}</h2>
+        <button className="btn small" type="button" onClick={onBack}>
+          Trocar teste
+        </button>
+      </div>
+      <p className="muted">{definition.name}</p>
+      <p className="srcnote" style={{ marginBottom: 14 }}>
+        {definition.instructions}
+      </p>
+      <div className="fields">
+        <ErrorNote error={save.error} />
+        <div className="fld wide">
+          <label htmlFor="f-date">Data da avaliação</label>
+          <input
+            id="f-date"
+            type="date"
+            required
+            max={todayISO()}
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+          />
+        </div>
+        {grouped
+          ? definition.sections.map((section) => {
+              const fields = definition.fields.filter((field) => field.section === section.key);
+              return fields.length > 1 ? (
+                <fieldset className="fgroup" key={section.key}>
+                  <legend>{section.name}</legend>
+                  {fields.map(renderField)}
+                </fieldset>
+              ) : (
+                fields.map(renderField)
+              );
+            })
+          : null}
+        {/* Campos fora das seções resumidas (ex.: ponto de escolaridade do MoCA) ou testes de seção única. */}
+        {definition.fields
+          .filter(
+            (field) =>
+              !grouped || !definition.sections.some((section) => section.key === field.section),
+          )
+          .map(renderField)}
+        <div
+          className={`note ${complete ? (LEVEL_CHIP[preview.level] === 'up' ? 'ok' : preview.level === 'info' ? '' : 'warn') : ''}`}
+          role="status"
+        >
+          <b>
+            {definition.totalLabel}: {scoreText(preview.total, preview.max)}
+          </b>
+          {complete
+            ? ` · ${preview.label}`
+            : ` · ${parsed.missing ? 'responda todos os itens' : 'corrija os campos destacados'}`}
+        </div>
+        <div className="obs">
+          <label htmlFor="f-obs">Observações</label>
+          <textarea
+            id="f-obs"
+            maxLength={2000}
+            value={observations}
+            onChange={(event) => setObservations(event.target.value)}
+          />
+        </div>
+        <div className="actions">
+          <button className="btn primary" type="submit" disabled={!complete || save.isPending}>
+            Salvar ficha e atualizar evolução
+          </button>
+          <button className="btn" type="button" onClick={onCancel}>
+            Cancelar
+          </button>
+        </div>
+        {!complete && (
+          <p className="srcnote">Preencha a data e todos os itens do teste para salvar.</p>
+        )}
+      </div>
+    </form>
+  );
+}
+
+function NewFicha({
+  patient,
+  id,
+  onCancel,
+}: {
+  patient: Patient;
+  id: string;
+  onCancel: () => void;
+}) {
+  const [category, setCategory] = useState<InstrumentCategory>('cognicao');
+  const [instrument, setInstrument] = useState<InstrumentKey | null>(null);
+  const definition = instrument ? getInstrument(instrument) : undefined;
+  if (definition)
+    return (
+      <InstrumentForm
+        key={definition.key}
+        definition={definition}
+        patient={patient}
+        id={id}
+        onBack={() => setInstrument(null)}
+        onCancel={onCancel}
+      />
+    );
+  return (
+    <div className="panel">
+      <h2>Nova ficha</h2>
+      <p className="muted" style={{ marginBottom: 14 }}>
+        Escolha a área e o teste aplicado ao paciente.
+      </p>
+      <div className="seg" role="tablist" aria-label="Áreas de avaliação">
+        {INSTRUMENT_CATEGORIES.map((entry) => (
+          <button
+            type="button"
+            role="tab"
+            className="segb"
+            key={entry.key}
+            aria-selected={category === entry.key}
+            onClick={() => setCategory(entry.key)}
+          >
+            {entry.name}
+          </button>
+        ))}
+      </div>
+      <div className="tests" role="tabpanel">
+        {INSTRUMENTS.filter((entry) => entry.category === category).map((entry) => (
+          <button
+            type="button"
+            className="testb"
+            key={entry.key}
+            onClick={() => setInstrument(entry.key)}
+          >
+            <b>{entry.shortName}</b>
+            <span className="muted">{entry.summary}</span>
+          </button>
+        ))}
+      </div>
+      <div className="actions" style={{ marginTop: 14 }}>
+        <button className="btn" type="button" onClick={onCancel}>
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PatientFichas() {
+  const { id, patient } = usePatientContext();
+  const [formOpen, setFormOpen] = useState(false);
+  const justRegistered = useUIStore((state) => state.justRegistered[id]);
+  const fichasQuery = useQuery({
+    queryKey: ['fichas', id],
+    queryFn: () => client<{ evaluations: Evaluation[] }>(`/patients/${id}/fichas`),
+  });
   if (fichasQuery.isLoading) return <Loading />;
   if (fichasQuery.error) return <ErrorNote error={fichasQuery.error} />;
-  if (pending && scores) {
-    const lines = pending.sheetLines;
-    const names = ['Lendo a ficha', 'Identificando os campos', 'Conferindo a soma do total'];
-    return (
-      <>
-        <ErrorNote error={error || confirm.error} />
-        <div className="split">
-          <div>
-            <div className="paper">
-              {lines.map((line) => (
-                <div
-                  className={`ln ${highlight === line.id ? 'hl' : ''}`}
-                  id={line.id}
-                  key={line.id}
-                >
-                  {line.title ? (
-                    <span className="tt">{line.title}</span>
-                  ) : (
-                    <>
-                      <span>
-                        {line.id === 'l1' && line.left?.startsWith('Data: ')
-                          ? `Data: ${shortDate(line.left.slice(6))}`
-                          : line.left}
-                      </span>
-                      {line.right && <span>{line.right}</span>}
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-            <p className="srcnote">
-              Ficha de exemplo, escrita à mão. No produto: foto, PDF ou planilha.
-            </p>
-          </div>
-          {extracting ? (
-            <div className="panel">
-              <h2>Extraindo…</h2>
-              <ul className="steps">
-                {names.map((name, index) => (
-                  <li className={step > index ? 'done' : ''} key={name}>
-                    <span className="dot" />
-                    {name}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : step === 3 ? (
-            <div className="panel">
-              <h2>Dados extraídos</h2>
-              <div className="fields">
-                <div className="fld">
-                  <div>
-                    <label>Data da avaliação</label>
-                    <small>Fonte: linha 1</small>
-                  </div>
-                  <input
-                    value={shortDate(pending.date)}
-                    readOnly
-                    data-src="l1"
-                    onFocus={() => setHighlight('l1')}
-                    onBlur={() => setHighlight(null)}
-                  />
-                </div>
-                {MEEM_DOMAINS.map((domain, index) => {
-                  const source = `l${index + 3}`;
-                  const flagged = pending.flag === domain.key && !flagConfirmed;
-                  return (
-                    <div
-                      className={`fld ${flagged ? 'flagged' : ''}`}
-                      key={domain.key}
-                      onMouseEnter={() => setHighlight(source)}
-                      onMouseLeave={() => setHighlight(null)}
-                    >
-                      <div>
-                        <label htmlFor={`f-${domain.key}`}>
-                          {domain.name} (máx. {domain.max})
-                        </label>
-                        <small>
-                          Fonte: linha {index + 3} da ficha
-                          {flagged ? ' · baixa confiança, escrita pouco legível' : ''}
-                        </small>
-                        {flagged && (
-                          <button
-                            className="btn small"
-                            style={{ marginTop: 6 }}
-                            onClick={() => setFlagConfirmed(true)}
-                          >
-                            Está correto
-                          </button>
-                        )}
-                      </div>
-                      <input
-                        id={`f-${domain.key}`}
-                        type="number"
-                        min={0}
-                        max={domain.max}
-                        value={scores[domain.key]}
-                        data-src={source}
-                        onFocus={() => setHighlight(source)}
-                        onBlur={() => setHighlight(null)}
-                        onChange={(event) =>
-                          setScores((current) => ({
-                            ...current!,
-                            [domain.key]: Number(event.target.value),
-                          }))
-                        }
-                      />
-                    </div>
-                  );
-                })}
-                <div className={`note ${sumMatches ? 'ok' : 'warn'}`} role="status">
-                  {sumMatches
-                    ? `A soma dos domínios (${total}) confere com o total escrito na ficha (${pending.writtenTotal}/30).`
-                    : `A soma dos domínios (${total}) é diferente do total escrito na ficha (${pending.writtenTotal}/30). Revise os valores.`}
-                </div>
-                <div className="obs">
-                  <label htmlFor="f-obs">Observações</label>
-                  <textarea
-                    id="f-obs"
-                    value={observations}
-                    onChange={(event) => setObservations(event.target.value)}
-                    onFocus={() => setHighlight('l9')}
-                    onBlur={() => setHighlight(null)}
-                  />
-                </div>
-                <button
-                  className="btn primary"
-                  disabled={!flagConfirmed || !sumMatches || confirm.isPending}
-                  onClick={() => confirm.mutate()}
-                >
-                  Confirmar ficha e atualizar evolução
-                </button>
-                <p className="srcnote">
-                  {flagConfirmed && sumMatches
-                    ? 'Tudo conferido.'
-                    : 'Confirme o campo sinalizado e a soma para liberar o botão.'}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="panel">
-              <h2>Extração dos dados</h2>
-              <p className="muted" style={{ marginBottom: 14 }}>
-                A IA lê a ficha e preenche os campos. Você confere cada um antes de salvar.
-              </p>
-              <button className="btn primary" onClick={extract}>
-                Extrair dados com IA
-              </button>
-            </div>
-          )}
-        </div>
-      </>
-    );
-  }
-  const evaluations = data?.evaluations ?? [];
+  const evaluations = fichasQuery.data?.evaluations ?? [];
   return (
     <div className="stack">
-      {useUIStore.getState().justConfirmed[id] && (
+      {justRegistered && (
         <div className="note ok">
-          Ficha de {shortDate(useUIStore.getState().justConfirmed[id]!)} confirmada. A evolução e as
-          sugestões foram atualizadas.
+          Ficha de {shortDate(justRegistered)} registrada. A evolução e as sugestões foram
+          atualizadas.
         </div>
       )}
       <div className="panel">
@@ -1113,19 +1217,22 @@ function PatientFichas() {
               <thead>
                 <tr>
                   <th>Data</th>
-                  <th>Instrumento</th>
-                  <th className="num">Total</th>
-                  <th>Situação</th>
+                  <th>Teste</th>
+                  <th className="num">Resultado</th>
+                  <th>Interpretação</th>
                 </tr>
               </thead>
               <tbody>
                 {evaluations.map((evaluation) => (
-                  <tr key={evaluation.date}>
+                  <tr key={`${evaluation.instrument}-${evaluation.date}`}>
                     <td>{evaluation.date}</td>
-                    <td>MEEM</td>
-                    <td className="num">{evaluation.total}/30</td>
+                    <td>{evaluation.instrumentName}</td>
+                    <td className="num">{scoreText(evaluation.total, evaluation.max)}</td>
                     <td>
-                      <span className="chip up">Conferida</span>
+                      <span className={`chip ${LEVEL_CHIP[evaluation.level]}`}>
+                        {LEVEL_NAME[evaluation.level]}
+                      </span>{' '}
+                      <span className="muted interp">{evaluation.interpretation}</span>
                     </td>
                   </tr>
                 ))}
@@ -1133,33 +1240,21 @@ function PatientFichas() {
             </table>
           </div>
         ) : (
-          <p className="muted">Nenhuma ficha enviada ainda.</p>
+          <p className="muted">Nenhuma ficha registrada ainda.</p>
         )}
       </div>
-      {uploading ? (
-        <div className="drop">
-          <h3>Recebendo a ficha…</h3>
-          <ul className="steps">
-            <li className="done">
-              <span className="dot" />
-              Arquivo recebido
-            </li>
-            <li>
-              <span className="dot" />
-              Preparando a leitura
-            </li>
-          </ul>
-        </div>
+      {formOpen ? (
+        <NewFicha patient={patient} id={id} onCancel={() => setFormOpen(false)} />
       ) : (
         <div className="drop">
-          <h3>Enviar nova ficha</h3>
+          <h3>Registrar nova ficha</h3>
           <p className="muted">
-            No produto: foto, PDF ou planilha. No protótipo, o botão gera uma ficha de exemplo para
-            este paciente.
+            Testes de cognição (MEEM, MoCA, Relógio, Fluência verbal), humor (GDS-15, Ansiedade
+            geriátrica) e funcionalidade (Pfeffer, Katz, CDR).
           </p>
           <div>
-            <button className="btn primary" onClick={upload}>
-              Enviar nova ficha
+            <button className="btn primary" onClick={() => setFormOpen(true)}>
+              Registrar nova ficha
             </button>
           </div>
         </div>
@@ -1270,15 +1365,29 @@ function FragmentRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function chart(series: NonNullable<Evolution['series']>) {
+function chart(instrument: InstrumentEvolution) {
+  const series = instrument.series;
   const width = 560,
     height = 230,
     left = 40,
-    right = 18,
+    right = 44,
     top = 16,
-    bottom = 36,
-    min = 16,
-    max = 30;
+    bottom = 36;
+  const values = series.map((entry) => entry.total);
+  // Teto: máximo do teste; sem máximo (fluência), um pouco acima do maior valor.
+  const max = instrument.max ?? Math.max(10, Math.ceil((Math.max(...values) * 1.25) / 5) * 5);
+  // MEEM: aproxima o eixo da faixa usual, sem cortar valores baixos.
+  const min =
+    instrument.key === 'meem'
+      ? Math.max(0, Math.min(16, Math.floor(Math.min(...values) / 2) * 2 - 2))
+      : 0;
+  // Marcações em números redondos (meio ponto em escalas curtas, como a CDR).
+  const step = max - min >= 8 ? 1 : 0.5;
+  const ticks = [
+    ...new Set(
+      [1, 2, 3, 4].map((index) => Math.round((min + ((max - min) * index) / 4) / step) * step),
+    ),
+  ];
   const x = (index: number) =>
     series.length === 1
       ? left + (width - left - right) / 2
@@ -1289,13 +1398,13 @@ function chart(series: NonNullable<Evolution['series']>) {
       className="chart"
       viewBox={`0 0 ${width} ${height}`}
       role="img"
-      aria-label="Pontuação total do MEEM por avaliação"
+      aria-label={`${instrument.totalLabel} do ${instrument.shortName} por avaliação`}
     >
-      {[18, 22, 26, 30].map((value) => (
+      {ticks.map((value) => (
         <g key={value}>
           <line className="grid" x1={left} x2={width - right} y1={y(value)} y2={y(value)} />
           <text x={left - 8} y={y(value) + 4} textAnchor="end">
-            {value}
+            {formatScore(value)}
           </text>
         </g>
       ))}
@@ -1314,7 +1423,7 @@ function chart(series: NonNullable<Evolution['series']>) {
             r="6"
           />
           <text className="val" x={x(index)} y={y(entry.total) - 12} textAnchor="middle">
-            {entry.total}
+            {formatScore(entry.total)}
           </text>
           <text x={x(index)} y={height - 12} textAnchor="middle">
             {entry.date}
@@ -1327,15 +1436,19 @@ function chart(series: NonNullable<Evolution['series']>) {
 
 function EvolutionPage() {
   const { patient, id } = usePatientContext();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['evolution', id],
     queryFn: () => client<Evolution>(`/patients/${id}/evolution`),
   });
+  const [selected, setSelected] = useState<InstrumentKey | null>(
+    (location.state as { instrument?: InstrumentKey } | null)?.instrument ?? null,
+  );
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [error, setError] = useState<unknown>(null);
-  const freshDate = useUIStore((state) => state.justConfirmed[id]);
+  const freshDate = useUIStore((state) => state.justRegistered[id]);
   const update = useMutation({
     mutationFn: ({
       key,
@@ -1361,137 +1474,148 @@ function EvolutionPage() {
   if (query.isLoading) return <Loading />;
   if (query.error) return <ErrorNote error={query.error} />;
   const evolution = query.data!;
-  const series = evolution.series ?? [];
+  const current =
+    evolution.instruments.find((entry) => entry.key === selected) ??
+    evolution.instruments.find((entry) => entry.key === evolution.latestInstrument) ??
+    evolution.instruments[0];
+  const suggestions = evolution.suggestions.filter(
+    (suggestion) => suggestion.instrument === current?.key,
+  );
   const action = (key: string, status: 'open' | 'ok' | 'no') =>
     update.mutate({ key, patch: { status } });
+  if (!current)
+    return (
+      <div className="panel">
+        <h2>Ainda não há avaliações</h2>
+        <p className="muted" style={{ marginBottom: 14 }}>
+          Registre a primeira ficha deste paciente para ver a evolução e receber sugestões.
+        </p>
+        <Link className="btn primary" to={`/pacientes/${id}`}>
+          Ir para as fichas
+        </Link>
+      </div>
+    );
   return (
     <div className="stack">
-      {evolution.hasPending && (
+      <div className="seg" role="tablist" aria-label="Testes aplicados">
+        {evolution.instruments.map((entry) => (
+          <button
+            type="button"
+            role="tab"
+            className="segb"
+            key={entry.key}
+            aria-selected={entry.key === current.key}
+            onClick={() => setSelected(entry.key)}
+          >
+            {entry.shortName}{' '}
+            <span className={`chip ${LEVEL_CHIP[entry.latest.level]}`}>
+              {scoreText(entry.latest.total, entry.latest.max)}
+            </span>
+          </button>
+        ))}
+      </div>
+      <div className="panel">
+        <div className="head-row">
+          <h2>Evolução do total ({current.shortName})</h2>
+          <span className={`chip ${TONE_CHIP[current.trend.tone]}`}>{current.trend.label}</span>
+        </div>
+        <div className="chartbox">{chart(current)}</div>
         <div
-          className="note warn"
-          style={{
-            display: 'flex',
-            gap: 12,
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
+          className={`note ${LEVEL_CHIP[current.latest.level] === 'up' ? 'ok' : current.latest.level === 'info' ? '' : 'warn'}`}
         >
-          <span>
-            Há 1 ficha nova ({shortDate(evolution.pendingDate ?? '')}) aguardando conferência. A
-            evolução abaixo ainda não a inclui.
-          </span>
-          <Link className="btn small" to={`/pacientes/${id}`}>
-            Conferir ficha
-          </Link>
+          <b>
+            Último resultado ({current.latest.date}):{' '}
+            {scoreText(current.latest.total, current.latest.max)}
+          </b>{' '}
+          · {current.latest.label}
         </div>
-      )}
-      {series.length === 0 ? (
+        <p className="srcnote">
+          {current.name}.{' '}
+          {current.higherIsBetter
+            ? 'Quanto maior a pontuação, melhor o desempenho.'
+            : 'Quanto maior a pontuação, maior o comprometimento.'}
+          {current.series.length === 1
+            ? ' Esta é a primeira avaliação; a comparação começa na próxima ficha.'
+            : ''}
+        </p>
+      </div>
+      {current.delta && (
         <div className="panel">
-          <h2>Ainda não há avaliações</h2>
-          <p className="muted" style={{ marginBottom: 14 }}>
-            Envie a primeira ficha deste paciente para ver a evolução e receber sugestões.
-          </p>
-          <Link className="btn primary" to={`/pacientes/${id}`}>
-            Ir para as fichas
-          </Link>
-        </div>
-      ) : (
-        <>
-          <div className="panel">
-            <h2>Evolução do total (MEEM)</h2>
-            <div className="chartbox">{chart(series)}</div>
-            <p className="srcnote">
-              Pontuação de 0 a 30. Dados fictícios de exemplo.
-              {series.length === 1
-                ? ' Esta é a primeira avaliação; a comparação começa na próxima ficha.'
-                : ''}
-            </p>
-          </div>
-          {evolution.delta && (
-            <div className="panel">
-              <h2>O que mudou desde a avaliação anterior</h2>
-              <div className="tblwrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Domínio</th>
-                      <th className="num">{evolution.delta.previousDate}</th>
-                      <th className="num">{evolution.delta.lastDate}</th>
-                      <th>Variação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {evolution.delta.rows.map((row) => (
-                      <tr key={row.domain}>
-                        <td>{row.name}</td>
-                        <td className="num">
-                          {row.previous}/{row.max}
-                        </td>
-                        <td className="num">
-                          {row.last}/{row.max}
-                        </td>
-                        <td>
-                          <span
-                            className={`chip ${row.kind === 'up' ? 'up' : row.kind === 'down' ? 'down' : ''}`}
-                          >
-                            {row.label}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-          <ErrorNote error={error || update.error} />
-          <div>
-            <h2 style={{ marginBottom: 12 }}>Sugestões para a rotina</h2>
-            <div className="stack" style={{ gap: 12 }}>
-              {evolution.suggestions.map((suggestion) => (
-                <SuggestionCard
-                  key={suggestion.key}
-                  suggestion={suggestion}
-                  patient={patient}
-                  freshDate={freshDate}
-                  editing={editingKey === suggestion.key}
-                  editText={editText}
-                  setEditText={setEditText}
-                  startEdit={() => {
-                    setEditingKey(suggestion.key);
-                    setEditText(suggestion.state.customText ?? suggestion.defaultText);
-                  }}
-                  cancelEdit={() => setEditingKey(null)}
-                  saveEdit={() =>
-                    update.mutate({ key: suggestion.key, patch: { customText: editText } })
-                  }
-                  onStatus={(status) => action(suggestion.key, status)}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="panel">
-            <h2>Rotina planejada</h2>
-            {evolution.routine.length ? (
-              <ul className="routine">
-                {evolution.routine.map((item) => (
-                  <li key={item.key}>
-                    <span>{item.title}</span>
-                    <span className="muted">
-                      {item.duration} · {item.frequency}
-                    </span>
-                  </li>
+          <h2>O que mudou desde a avaliação anterior</h2>
+          <div className="tblwrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{current.delta.rows.length > 1 ? 'Item' : 'Pontuação'}</th>
+                  <th className="num">{current.delta.previousDate}</th>
+                  <th className="num">{current.delta.lastDate}</th>
+                  <th>Variação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {current.delta.rows.map((row) => (
+                  <tr key={row.key}>
+                    <td>{row.name}</td>
+                    <td className="num">{scoreText(row.previous, row.max)}</td>
+                    <td className="num">{scoreText(row.last, row.max)}</td>
+                    <td>
+                      <span className={`chip ${TONE_CHIP[row.tone]}`}>{row.label}</span>
+                    </td>
+                  </tr>
                 ))}
-              </ul>
-            ) : (
-              <p className="muted">
-                Aceite sugestões para montar a rotina da semana deste paciente.
-              </p>
-            )}
+              </tbody>
+            </table>
           </div>
-        </>
+        </div>
       )}
+      <ErrorNote error={error || update.error} />
+      <div>
+        <h2 style={{ marginBottom: 12 }}>Sugestões para a rotina ({current.shortName})</h2>
+        <div className="stack" style={{ gap: 12 }}>
+          {suggestions.map((suggestion) => (
+            <SuggestionCard
+              key={suggestion.key}
+              suggestion={suggestion}
+              patient={patient}
+              freshDate={freshDate}
+              editing={editingKey === suggestion.key}
+              editText={editText}
+              setEditText={setEditText}
+              startEdit={() => {
+                setEditingKey(suggestion.key);
+                setEditText(suggestion.state.customText ?? suggestion.defaultText);
+              }}
+              cancelEdit={() => setEditingKey(null)}
+              saveEdit={() =>
+                update.mutate({ key: suggestion.key, patch: { customText: editText } })
+              }
+              onStatus={(status) => action(suggestion.key, status)}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="panel">
+        <h2>Rotina planejada</h2>
+        {evolution.routine.length ? (
+          <ul className="routine">
+            {evolution.routine.map((item) => (
+              <li key={item.key}>
+                <span>
+                  {item.title}{' '}
+                  <span className="chip">{getInstrument(item.instrument)?.shortName}</span>
+                </span>
+                <span className="muted">
+                  {item.duration} · {item.frequency}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">
+            Aceite sugestões de qualquer teste para montar a rotina da semana deste paciente.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -1647,10 +1771,6 @@ function HomePage() {
             <span>Profissionais cadastrados</span>
           </div>
         )}
-        <div className={`kpi ${kpi.pendingFichas ? 'warn' : ''}`}>
-          <b>{kpi.pendingFichas}</b>
-          <span>Fichas aguardando conferência</span>
-        </div>
         <div className={`kpi ${kpi.recentDrops ? 'warn' : ''}`}>
           <b>{kpi.recentDrops}</b>
           <span>Pacientes com queda recente</span>
@@ -1692,7 +1812,7 @@ function HomePage() {
           ) : (
             <div className="panel">
               <p className="muted">
-                Nada pendente. Envie uma nova ficha em um paciente para atualizar a evolução.
+                Nada pendente. Registre uma nova ficha em um paciente para atualizar a evolução.
               </p>
             </div>
           )}
@@ -1700,9 +1820,9 @@ function HomePage() {
         <div className="guide" style={{ marginBottom: 0 }}>
           <b>Roteiro do demo (2 minutos)</b>
           <ol>
-            <li>Abra um paciente e clique em Enviar nova ficha.</li>
-            <li>Peça a extração, confira os campos e a fonte de cada um.</li>
-            <li>Confirme a ficha e veja a evolução se atualizar.</li>
+            <li>Abra um paciente e clique em Registrar nova ficha.</li>
+            <li>Escolha a área e o teste (ex.: Humor › GDS-15) e preencha a ficha.</li>
+            <li>Salve a ficha e veja a evolução se atualizar.</li>
             <li>Aceite, edite ou recuse as sugestões e monte a rotina.</li>
           </ol>
         </div>
@@ -1753,7 +1873,8 @@ function RoutinesPage() {
                 {patient.activities.map((activity) => (
                   <li key={activity.key}>
                     <span>
-                      <b>{activity.title}</b>
+                      <b>{activity.title}</b>{' '}
+                      <span className="chip">{getInstrument(activity.instrument)?.shortName}</span>
                       <br />
                       <span className="muted">{activity.text}</span>
                     </span>

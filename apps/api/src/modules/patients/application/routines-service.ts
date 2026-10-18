@@ -1,5 +1,5 @@
-import { generateSuggestions, type MeemScores } from '@mente-ativa/shared';
 import { PatientModel } from '../../shared/infra/models.js';
+import { patientSuggestions } from '../../evaluations/domain/patient-evaluations.js';
 import type { AuthUser } from '../../shared/presentation/http.js';
 
 export class RoutinesService {
@@ -7,13 +7,7 @@ export class RoutinesService {
     const query = user.role === 'admin' ? {} : { responsibleUsername: user.username };
     const patients = await PatientModel.find(query).sort({ _id: 1 }).lean();
     const items = patients.flatMap((patient) => {
-      const suggestions = generateSuggestions({
-        id: patient.code,
-        evaluations: patient.evaluations.map((entry) => ({
-          date: entry.date,
-          scores: entry.scores as MeemScores,
-        })),
-      });
+      const suggestions = patientSuggestions(patient);
       const states = new Map(patient.suggestionStates.map((state) => [state.key, state]));
       const activities = suggestions
         .filter((suggestion) => states.get(suggestion.key)?.status === 'ok')
@@ -21,6 +15,7 @@ export class RoutinesService {
           const state = states.get(suggestion.key);
           return {
             key: suggestion.key,
+            instrument: suggestion.instrument,
             title: suggestion.activity.title,
             text: state?.customText ?? suggestion.activity.text,
             duration: suggestion.activity.duration,

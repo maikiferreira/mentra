@@ -17,7 +17,7 @@ test.afterAll(async ({ request }) => {
   if (adminToken) await resetDemo(request);
 });
 
-test('RN-AUTH-01/RN-PAT-01/RN-FIC-03..08/RN-EVO-03..07: demo principal mantém fluxo e dados do protótipo', async ({
+test('RN-AUTH-01/RN-PAT-01/RN-FIC-01..05/RN-EVO-03..07: demo principal mantém fluxo e dados do protótipo', async ({
   page,
 }) => {
   await page.goto('/login');
@@ -35,24 +35,19 @@ test('RN-AUTH-01/RN-PAT-01/RN-FIC-03..08/RN-EVO-03..07: demo principal mantém f
   await expect(page.getByRole('link', { name: /014 M\.S\., 78 anos/ })).toBeVisible();
   await page.getByRole('link', { name: /014 M\.S\., 78 anos/ }).click();
   await expect(page.getByRole('heading', { name: /Paciente 014/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Enviar nova ficha' }).click();
-  await expect(page.getByText('Recebendo a ficha…')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Extrair dados com IA' })).toBeVisible({
-    timeout: 5000,
-  });
-  await page.getByRole('button', { name: 'Extrair dados com IA' }).click();
-  await expect(page.getByText('Extraindo…')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Dados extraídos' })).toBeVisible({
-    timeout: 5000,
-  });
-  await expect(
-    page.getByText('A soma dos domínios (22) confere com o total escrito na ficha (22/30).'),
-  ).toBeVisible();
-  const confirm = page.getByRole('button', { name: 'Confirmar ficha e atualizar evolução' });
-  await expect(confirm).toBeDisabled();
-  await page.getByRole('button', { name: 'Está correto' }).click();
-  await expect(confirm).toBeEnabled();
-  await confirm.click();
+  await page.getByRole('button', { name: 'Registrar nova ficha' }).click();
+  await page.getByRole('button', { name: /^MEEM/ }).click();
+  const save = page.getByRole('button', { name: 'Salvar ficha e atualizar evolução' });
+  await expect(save).toBeDisabled();
+  await page.getByLabel('Orientação temporal e espacial (máx. 10)').fill('8');
+  await page.getByLabel('Memória imediata (registro) (máx. 3)').fill('3');
+  await page.getByLabel('Atenção e cálculo (máx. 5)').fill('2');
+  await page.getByLabel('Evocação (máx. 3)').fill('1');
+  await page.getByLabel('Linguagem e praxia construtiva (máx. 9)').fill('8');
+  await expect(page.getByRole('status')).toContainText('Total: 22/30');
+  await page.getByLabel('Observações').fill('Relata cansaço.');
+  await expect(save).toBeEnabled();
+  await save.click();
 
   await expect(page.getByRole('heading', { name: 'Evolução do total (MEEM)' })).toBeVisible();
   await expect(page.getByText('Nova com a ficha de', { exact: false }).first()).toBeVisible();
@@ -72,7 +67,7 @@ test('RN-PAT-02/RN-PAT-04/RN-PAT-07/RN-PAT-08: cria e exclui paciente sem avalia
   await page.getByLabel('Nome *').fill('Contato fictício');
   await page.getByLabel('Telefone *').fill('32988887777');
   await page.getByRole('button', { name: 'Salvar' }).click();
-  await expect(page.getByText('Nenhuma ficha enviada ainda.')).toBeVisible();
+  await expect(page.getByText('Nenhuma ficha registrada ainda.')).toBeVisible();
   await page.getByRole('tab', { name: 'Dados do paciente' }).click();
   await page.getByRole('button', { name: 'Excluir paciente' }).click();
   await page.getByRole('button', { name: 'Sim, excluir' }).click();

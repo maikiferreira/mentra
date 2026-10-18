@@ -7,20 +7,6 @@ export interface Evaluation {
   scores: MeemScores;
 }
 
-export interface PatientForPlanning {
-  id: string;
-  evaluations: Evaluation[];
-  generationCursor: number;
-}
-
-export interface PendingFicha {
-  date: string;
-  scores: MeemScores;
-  writtenTotal: number;
-  flag: MeemDomainKey | null;
-  observations: string;
-}
-
 export interface DomainFlag {
   domain: (typeof MEEM_DOMAINS)[number];
   peak: number;
@@ -95,22 +81,6 @@ export const BASELINE_ACTIVITY: Activity = {
   duration: '15 min',
   frequency: '2x por semana',
 };
-
-const BASE_SCORES: MeemScores = { ori: 9, reg: 3, ate: 4, evo: 2, lin: 8 };
-const SCRIPT: Record<string, Partial<Record<MeemDomainKey, number>>[]> = {
-  '014': [{ ate: -1 }, { evo: 1 }, { ori: 1 }],
-  '021': [{ evo: 1 }, { ori: 1 }, { lin: -1 }],
-  '009': [{ ate: -1 }, { evo: -1 }, { ori: -1 }],
-};
-const DEFAULT_SCRIPT: Partial<Record<MeemDomainKey, number>>[] = [
-  { ate: -1 },
-  { evo: 1 },
-  { ori: -1 },
-  { lin: 1 },
-];
-const OBSERVATION_FIRST = 'Primeira avaliação. Colaborou bem durante a sessão.';
-const OBSERVATION_UP = 'Mais participativo hoje. Concluiu a atividade sem pausas.';
-const OBSERVATION_DOWN = 'Relata cansaço e esquecimento de recados. Participou do jogo de pares.';
 
 export function totalScore(scores: MeemScores): number {
   return MEEM_DOMAINS.reduce((sum, domain) => sum + scores[domain.key], 0);
@@ -208,41 +178,16 @@ export function generateSuggestions(patient: {
   }));
 }
 
-export function generateMagicOzFicha(patient: PatientForPlanning, date: string): PendingFicha {
-  const lastEvaluation = patient.evaluations[patient.evaluations.length - 1];
-  if (!lastEvaluation) {
-    const scores = { ...BASE_SCORES };
-    return {
-      date,
-      scores,
-      writtenTotal: totalScore(scores),
-      flag: 'ate',
-      observations: OBSERVATION_FIRST,
-    };
-  }
-
-  const script = SCRIPT[patient.id] ?? DEFAULT_SCRIPT;
-  const step = script[patient.generationCursor % script.length]!;
-  patient.generationCursor += 1;
-  const scores = { ...lastEvaluation.scores };
-  let flag: MeemDomainKey | null = null;
-
-  for (const domain of MEEM_DOMAINS) {
-    const delta = step[domain.key];
-    if (delta !== undefined) {
-      scores[domain.key] = Math.max(0, Math.min(domain.max, scores[domain.key]! + delta));
-      flag = domain.key;
-    }
-  }
-
-  const delta = flag ? step[flag] : undefined;
-  return {
-    date,
-    scores,
-    writtenTotal: totalScore(scores),
-    flag,
-    observations: delta !== undefined && delta > 0 ? OBSERVATION_UP : OBSERVATION_DOWN,
-  };
+/**
+ * Chave numérica (aaaammdd) para ordenar datas de avaliação. Aceita `dd/mm/aaaa`,
+ * com sufixo opcional ` #n`, e `mm/aaaa` (datas dos pacientes de exemplo).
+ */
+export function evaluationDateKey(date: string): number | null {
+  const full = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(date);
+  if (full) return Number(`${full[3]}${full[2]}${full[1]}`);
+  const monthOnly = /^(\d{2})\/(\d{4})$/.exec(date);
+  if (monthOnly) return Number(`${monthOnly[2]}${monthOnly[1]}01`);
+  return null;
 }
 
 export function uniqueDate(evaluations: Pick<Evaluation, 'date'>[], today: string): string {

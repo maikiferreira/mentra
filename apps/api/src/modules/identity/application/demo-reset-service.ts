@@ -20,8 +20,6 @@ export async function resetDemoDatabase() {
   await PatientModel.insertMany(
     SEED_PATIENTS.map((patient) => ({
       ...patient,
-      generationCursor: 0,
-      pending: null,
       suggestionStates: [],
     })),
   );

@@ -1,25 +1,28 @@
 import {
-  MEEM_DOMAINS,
-  generateMagicOzFicha,
-  totalScore,
+  evaluateInstrument,
+  evaluationDateKey,
+  getInstrument,
   uniqueDate,
-  type MeemScores,
-  type PatientForPlanning,
-  type PendingFicha,
+  validateInstrumentScores,
 } from '@mente-ativa/shared';
 import { z } from 'zod';
-import { conflict, notFound, validationError } from '../../shared/kernel/errors.js';
+import { conflict, validationError } from '../../shared/kernel/errors.js';
 import { PatientModel } from '../../shared/infra/models.js';
 import { PatientService } from '../../patients/application/patient-service.js';
+import { contextOf, storedEvaluations } from '../domain/patient-evaluations.js';
 import type { AuthUser } from '../../shared/presentation/http.js';
 
-const confirmationSchema = z.object({
-  scores: z.record(z.string(), z.unknown()),
-  observations: z.string().optional(),
-  flagConfirmed: z.boolean(),
+const fichaSchema = z.object({
+  instrument: z.unknown().optional(),
+  date: z.unknown().optional(),
+  scores: z.record(z.string(), z.unknown()).optional(),
+  observations: z.unknown().optional(),
 });
 
-function todayBR(date = new Date()) {
+const MAX_OBSERVATIONS = 2000;
+
+/** Data de hoje em America/Sao_Paulo no formato aaaa-mm-dd. */
+function todayISO(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'America/Sao_Paulo',
     day: '2-digit',
@@ -27,25 +30,27 @@ function todayBR(date = new Date()) {
     year: 'numeric',
   }).formatToParts(date);
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.day}/${values.month}/${values.year}`;
+  return `${values.year}-${values.month}-${values.day}`;
 }
-function scoresTotal(scores: MeemScores) {
-  return totalScore(scores);
-}
-function sheetLines(code: string, ficha: PendingFicha) {
-  const values = MEEM_DOMAINS.map((domain) => ({
-    id: `l${MEEM_DOMAINS.indexOf(domain) + 3}`,
-    left: domain.name,
-    right: `${ficha.scores[domain.key]} /${domain.max}`,
-  }));
-  return [
-    { id: 'l0', title: 'Ficha de avaliação' },
-    { id: 'l1', left: `Data: ${ficha.date}`, right: `Pac. ${code}` },
-    { id: 'l2', left: 'Instrumento: MEEM' },
-    ...values,
-    { id: 'l8', left: 'Total', right: `${ficha.writtenTotal} /30` },
-    { id: 'l9', left: `Obs: ${ficha.observations}` },
-  ];
+
+/** Valida `aaaa-mm-dd` (formato do campo de data do navegador) e devolve `dd/mm/aaaa`. */
+function parseEvaluationDate(value: unknown, today: string): string {
+  if (typeof value !== 'string' || !value.trim())
+    throw validationError('Informe a data da avaliação.', 'date');
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  const [, year, month, day] = match ?? [];
+  const parsed = match ? new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))) : null;
+  if (
+    !parsed ||
+    parsed.getUTCFullYear() !== Number(year) ||
+    parsed.getUTCMonth() !== Number(month) - 1 ||
+    parsed.getUTCDate() !== Number(day)
+  ) {
+    throw validationError('Informe uma data de avaliação válida.', 'date');
+  }
+  if (value.trim() > today)
+    throw validationError('A data da avaliação não pode ser no futuro.', 'date');
+  return `${day}/${month}/${year}`;
 }
 
 export class FichaService {
@@ -53,108 +58,91 @@ export class FichaService {
 
   async list(user: AuthUser, code: string) {
     const patient = await this.patients.findVisible(user, code);
+    const context = contextOf(patient);
     return {
-      evaluations: [...patient.evaluations].reverse().map((evaluation) => ({
-        date: evaluation.date,
-        instrument: 'MEEM',
-        total: scoresTotal(evaluation.scores as MeemScores),
-        status: 'Conferida',
-      })),
-      pending: patient.pending
-        ? this.asPending(code, patient.pending as unknown as PendingFicha)
-        : null,
+      evaluations: storedEvaluations(patient)
+        .reverse()
+        .map((evaluation) => {
+          const definition = getInstrument(evaluation.instrument ?? 'meem')!;
+          const result = evaluateInstrument(definition, evaluation.scores, context);
+          return {
+            date: evaluation.date,
+            instrument: definition.key,
+            instrumentName: definition.shortName,
+            total: result.total,
+            max: result.max,
+            level: result.level,
+            interpretation: result.label,
+            status: 'Registrada',
+          };
+        }),
     };
   }
 
-  async getPending(user: AuthUser, code: string) {
+  async create(user: AuthUser, code: string, input: unknown) {
     const patient = await this.patients.findVisible(user, code);
-    if (!patient.pending) throw notFound();
-    return { pending: this.asPending(code, patient.pending as unknown as PendingFicha) };
-  }
-
-  async upload(user: AuthUser, code: string) {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const patient = await this.patients.findVisible(user, code);
-      if (patient.pending) throw conflict('Já existe uma ficha aguardando conferência.');
-      const date = uniqueDate(patient.evaluations, todayBR());
-      const plannerPatient: PatientForPlanning = {
-        id: patient.code,
-        evaluations: patient.evaluations.map((evaluation) => ({
-          date: evaluation.date,
-          scores: evaluation.scores as MeemScores,
-        })),
-        generationCursor: patient.generationCursor,
-      };
-      const pending = generateMagicOzFicha(plannerPatient, date);
-      const result = await PatientModel.updateOne(
-        { _id: patient._id, __v: patient.__v, pending: null },
-        { $set: { pending, generationCursor: plannerPatient.generationCursor }, $inc: { __v: 1 } },
-      );
-      if (result.modifiedCount === 1) return { pending: this.asPending(code, pending) };
-    }
-    throw conflict('Já existe uma ficha aguardando conferência.');
-  }
-
-  async confirm(user: AuthUser, code: string, input: unknown) {
-    const parsed = confirmationSchema.safeParse(input);
-    const body = parsed.success
-      ? parsed.data
-      : { scores: {}, flagConfirmed: false, observations: undefined };
-    const patient = await this.patients.findVisible(user, code);
-    const pending = patient.pending as unknown as PendingFicha | null;
-    if (!pending) throw notFound();
-    const edited: Partial<MeemScores> = {};
-    for (const domain of MEEM_DOMAINS) {
-      const score = body.scores[domain.key];
-      if (
-        typeof score !== 'number' ||
-        !Number.isInteger(score) ||
-        score < 0 ||
-        score > domain.max
-      ) {
-        throw validationError(
-          `A pontuação de ${domain.name} deve ser um número inteiro entre 0 e ${domain.max}.`,
-          'scores',
-        );
-      }
-      edited[domain.key] = score;
-    }
-    const scores = edited as MeemScores;
-    const total = scoresTotal(scores);
-    if (total !== pending.writtenTotal) {
+    const parsed = fichaSchema.safeParse(input);
+    const body = parsed.success ? parsed.data : {};
+    // Sem instrumento informado, mantém o comportamento original (MEEM).
+    const definition = getInstrument(
+      body.instrument === undefined ? 'meem' : String(body.instrument),
+    );
+    if (!definition) throw validationError('Selecione um teste válido.', 'instrument');
+    const date = parseEvaluationDate(body.date, todayISO());
+    const validated = validateInstrumentScores(definition, body.scores ?? {});
+    if ('error' in validated) throw validationError(validated.error, 'scores');
+    const { scores } = validated;
+    const observations = typeof body.observations === 'string' ? body.observations.trim() : '';
+    if (observations.length > MAX_OBSERVATIONS) {
       throw validationError(
-        `A soma dos domínios (${total}) é diferente do total escrito na ficha (${pending.writtenTotal}/30). Revise os valores.`,
-        'scores',
+        `As observações devem ter no máximo ${MAX_OBSERVATIONS} caracteres.`,
+        'observations',
       );
     }
-    if (body.flagConfirmed !== true) {
+
+    // A evolução compara as fichas de cada teste na ordem em que foram gravadas.
+    const sameInstrument = storedEvaluations(patient).filter(
+      (entry) => entry.instrument === definition.key,
+    );
+    const last = sameInstrument.at(-1);
+    const lastKey = last ? evaluationDateKey(last.date) : null;
+    if (last && lastKey !== null && evaluationDateKey(date)! < lastKey) {
       throw validationError(
-        'Confirme o campo sinalizado e a soma para liberar o botão.',
-        'flagConfirmed',
+        `A data não pode ser anterior à última avaliação de ${definition.shortName} (${last.date.split(' ')[0]}).`,
+        'date',
       );
     }
-    const date = pending.date;
+    const storedDate = uniqueDate(sameInstrument, date);
+    // Atualização condicional pela versão: evita duas fichas simultâneas com a mesma data.
     const result = await PatientModel.updateOne(
-      { _id: patient._id, __v: patient.__v, 'pending.date': pending.date },
+      { _id: patient._id, __v: patient.__v },
       {
         $push: {
           evaluations: {
-            date,
+            date: storedDate,
+            instrument: definition.key,
             scores,
-            notes: body.observations ?? pending.observations,
+            notes: observations || null,
             createdAt: new Date(),
           },
         },
-        $set: { pending: null },
         $inc: { __v: 1 },
       },
     );
     if (result.modifiedCount !== 1)
-      throw conflict('A ficha foi atualizada por outra solicitação. Recarregue e tente novamente.');
-    return { evaluation: { date, total }, justConfirmed: date };
-  }
-
-  private asPending(code: string, ficha: PendingFicha) {
-    return { ...ficha, sheetLines: sheetLines(code, ficha) };
+      throw conflict(
+        'O paciente foi atualizado por outra solicitação. Recarregue e tente novamente.',
+      );
+    const evaluation = evaluateInstrument(definition, scores, contextOf(patient));
+    return {
+      evaluation: {
+        date: storedDate,
+        instrument: definition.key,
+        total: evaluation.total,
+        max: evaluation.max,
+        level: evaluation.level,
+        interpretation: evaluation.label,
+      },
+    };
   }
 }

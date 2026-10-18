@@ -18,19 +18,13 @@ patientRouter.get('/', async (request, response) =>
 patientRouter.post('/', async (request, response) =>
   response.status(201).json(await patients.create(getRequestUser(request), request.body)),
 );
-patientRouter.get('/:id/fichas/pending', async (request, response) =>
-  response.json(await fichas.getPending(getRequestUser(request), request.params.id!)),
-);
-patientRouter.post('/:id/fichas/pending/confirm', async (request, response) =>
-  response
-    .status(201)
-    .json(await fichas.confirm(getRequestUser(request), request.params.id!, request.body)),
-);
 patientRouter.get('/:id/fichas', async (request, response) =>
   response.json(await fichas.list(getRequestUser(request), request.params.id!)),
 );
-patientRouter.post('/:id/fichas/upload', async (request, response) =>
-  response.status(201).json(await fichas.upload(getRequestUser(request), request.params.id!)),
+patientRouter.post('/:id/fichas', async (request, response) =>
+  response
+    .status(201)
+    .json(await fichas.create(getRequestUser(request), request.params.id!, request.body)),
 );
 patientRouter.get('/:id/evolution', async (request, response) =>
   response.json(await evolution.get(getRequestUser(request), request.params.id!)),

@@ -44,7 +44,6 @@ async function addSeedPatients() {
       phone: '(32) 99999-0014',
       address: '',
       emergencyContact: { name: 'Contato A', phone: '(32) 98888-0014', relationship: 'Filho(a)' },
-      generationCursor: 0,
       evaluations: [
         { date: '03/2026', scores: { ori: 9, reg: 3, ate: 3, evo: 2, lin: 8 } },
         { date: '06/2026', scores: { ori: 9, reg: 3, ate: 4, evo: 2, lin: 8 } },
@@ -65,7 +64,6 @@ async function addSeedPatients() {
       phone: '',
       address: '',
       emergencyContact: { name: 'Contato B', phone: '32988880021', relationship: 'Cônjuge' },
-      generationCursor: 0,
       evaluations: [
         { date: '03/2026', scores: { ori: 8, reg: 2, ate: 2, evo: 1, lin: 7 } },
         { date: '06/2026', scores: { ori: 8, reg: 3, ate: 2, evo: 1, lin: 7 } },
@@ -202,7 +200,6 @@ describe('API REST v1 (integração MongoDB) ', () => {
       initials: 'K.K.',
       responsibleUsername: 'prof1',
       evaluationCount: 0,
-      hasPending: false,
       group: 'Individual',
     });
     const updated = await request(app)
@@ -231,60 +228,157 @@ describe('API REST v1 (integração MongoDB) ', () => {
     });
   });
 
-  it('RN-FIC-02/03/08: upload retorna ficha e sheetLines, conflito pendente e confirmação valida soma/flag', async () => {
+  it('RN-FIC-01..05: registra ficha manual, valida data e notas e mantém a ordem das avaliações', async () => {
     await addSeedPatients();
-    const upload = await request(app)
-      .post('/api/v1/patients/014/fichas/upload')
-      .set(auth(prof1Token))
-      .send({});
-    expect(upload.status).toBe(201);
-    expect(upload.body.pending).toMatchObject({
-      scores: { ori: 8, reg: 3, ate: 2, evo: 1, lin: 8 },
-      writtenTotal: 22,
-      flag: 'ate',
+    const valid = { date: '2026-10-17', scores: { ori: 8, reg: 3, ate: 2, evo: 1, lin: 8 } };
+    const post = (body: object, token = prof1Token, code = '014') =>
+      request(app).post(`/api/v1/patients/${code}/fichas`).set(auth(token)).send(body);
+
+    expect((await post(valid, prof1Token, '021')).status).toBe(404);
+    expect((await post({ ...valid, date: '' })).body.error).toMatchObject({
+      message: 'Informe a data da avaliação.',
+      field: 'date',
     });
-    expect(upload.body.pending.sheetLines).toHaveLength(10);
-    const conflict = await request(app)
-      .post('/api/v1/patients/014/fichas/upload')
-      .set(auth(prof1Token))
-      .send({});
-    expect(conflict.status).toBe(409);
-    const mismatch = await request(app)
-      .post('/api/v1/patients/014/fichas/pending/confirm')
-      .set(auth(prof1Token))
-      .send({
-        scores: { ori: 8, reg: 3, ate: 1, evo: 1, lin: 8 },
-        flagConfirmed: true,
-      });
-    expect(mismatch.body.error.message).toBe(
-      'A soma dos domínios (21) é diferente do total escrito na ficha (22/30). Revise os valores.',
+    expect((await post({ ...valid, date: '2026-02-30' })).body.error.message).toBe(
+      'Informe uma data de avaliação válida.',
     );
-    const unconfirmed = await request(app)
-      .post('/api/v1/patients/014/fichas/pending/confirm')
-      .set(auth(prof1Token))
-      .send({
-        scores: upload.body.pending.scores,
-        flagConfirmed: false,
-      });
-    expect(unconfirmed.body.error.message).toBe(
-      'Confirme o campo sinalizado e a soma para liberar o botão.',
+    expect((await post({ ...valid, date: '2999-01-01' })).body.error.message).toBe(
+      'A data da avaliação não pode ser no futuro.',
     );
-    const confirmed = await request(app)
-      .post('/api/v1/patients/014/fichas/pending/confirm')
-      .set(auth(prof1Token))
-      .send({
-        scores: upload.body.pending.scores,
-        observations: 'Notas revisadas',
-        flagConfirmed: true,
-      });
-    expect(confirmed.status).toBe(201);
-    expect(confirmed.body).toMatchObject({
-      evaluation: { total: 22 },
-      justConfirmed: upload.body.pending.date,
+    expect((await post({ ...valid, date: '2026-08-31' })).body.error.message).toBe(
+      'A data não pode ser anterior à última avaliação de MEEM (09/2026).',
+    );
+    const outOfRange = await post({ ...valid, scores: { ...valid.scores, reg: 4 } });
+    expect(outOfRange.status).toBe(422);
+    expect(outOfRange.body.error.message).toBe(
+      'A pontuação de "Memória imediata (registro)" deve ser um número inteiro entre 0 e 3.',
+    );
+    expect(
+      (await post({ ...valid, scores: { ...valid.scores, lin: undefined } })).body.error.message,
+    ).toBe(
+      'A pontuação de "Linguagem e praxia construtiva" deve ser um número inteiro entre 0 e 9.',
+    );
+
+    const created = await post({ ...valid, observations: '  Relata cansaço.  ' });
+    expect(created.status).toBe(201);
+    expect(created.body.evaluation).toMatchObject({
+      date: '17/10/2026',
+      instrument: 'meem',
+      total: 22,
+      max: 30,
+      level: 'attention',
+    });
+    const sameDay = await post(valid);
+    expect(sameDay.body.evaluation.date).toBe('17/10/2026 #2');
+
+    const stored = await PatientModel.findOne({ code: '014' }).lean();
+    expect(stored!.evaluations.at(-2)).toMatchObject({
+      date: '17/10/2026',
+      scores: valid.scores,
+      notes: 'Relata cansaço.',
     });
     const list = await request(app).get('/api/v1/patients/014/fichas').set(auth(prof1Token));
-    expect(list.body.evaluations[0]).toMatchObject({ total: 22, status: 'Conferida' });
+    expect(list.body.evaluations[0]).toMatchObject({
+      instrument: 'meem',
+      instrumentName: 'MEEM',
+      total: 22,
+      max: 30,
+      status: 'Registrada',
+    });
     expect(list.body.evaluations[0]).not.toHaveProperty('notes');
+    expect(list.body).not.toHaveProperty('pending');
+    const evolution = await request(app)
+      .get('/api/v1/patients/014/evolution')
+      .set(auth(prof1Token));
+    expect(evolution.body.instruments[0].series.at(-1)).toEqual({
+      date: '17/10/2026 #2',
+      total: 22,
+    });
+  });
+
+  it('RN-TST-01..04: fichas de outros testes têm regras, evolução, sugestões e rotina próprias', async () => {
+    await addSeedPatients();
+    // GDS-15: "Sim" em todas = 10 pontos (sintomas depressivos); q1 = "Não" = 11 (grave).
+    const gdsAnswers = (overrides: Record<string, number> = {}) => ({
+      ...Object.fromEntries([...Array(15)].map((_, index) => [`q${index + 1}`, 1])),
+      ...overrides,
+    });
+    const post = (body: object) =>
+      request(app).post('/api/v1/patients/014/fichas').set(auth(prof1Token)).send(body);
+    expect(
+      (await post({ instrument: 'xyz', date: '2026-10-10', scores: {} })).body.error,
+    ).toMatchObject({
+      message: 'Selecione um teste válido.',
+      field: 'instrument',
+    });
+    expect(
+      (await post({ instrument: 'gds', date: '2026-10-10', scores: gdsAnswers({ q4: 3 }) })).body
+        .error.message,
+    ).toBe('Responda o item "Você se sente aborrecido com frequência?".');
+    // Data anterior ao último MEEM é aceita: a ordem é verificada por teste.
+    const first = await post({ instrument: 'gds', date: '2026-08-01', scores: gdsAnswers() });
+    expect(first.status).toBe(201);
+    expect(first.body.evaluation).toMatchObject({
+      instrument: 'gds',
+      total: 10,
+      max: 15,
+      level: 'attention',
+      interpretation: '5 ou mais: indicativo de sintomas depressivos.',
+    });
+    expect(
+      (await post({ instrument: 'gds', date: '2026-07-01', scores: gdsAnswers() })).body.error
+        .message,
+    ).toBe('A data não pode ser anterior à última avaliação de GDS-15 (01/08/2026).');
+    await post({ instrument: 'gds', date: '2026-10-10', scores: gdsAnswers({ q1: 0 }) });
+
+    const evolution = await request(app)
+      .get('/api/v1/patients/014/evolution')
+      .set(auth(prof1Token));
+    expect(evolution.body.latestInstrument).toBe('gds');
+    const gds = evolution.body.instruments.find((item: { key: string }) => item.key === 'gds');
+    expect(gds).toMatchObject({
+      shortName: 'GDS-15',
+      max: 15,
+      higherIsBetter: false,
+      series: [
+        { date: '01/08/2026', total: 10 },
+        { date: '10/10/2026', total: 11 },
+      ],
+      latest: { total: 11, level: 'alert' },
+      trend: { kind: 'up', tone: 'bad' },
+      delta: { rows: [{ key: 'total', previous: 10, last: 11, max: 15, tone: 'bad' }] },
+    });
+    const gdsSuggestions = evolution.body.suggestions.filter(
+      (item: { instrument: string }) => item.instrument === 'gds',
+    );
+    expect(gdsSuggestions.map((item: { key: string }) => item.key)).toEqual([
+      '014:gds:encaminhamento',
+      '014:gds:prazer',
+      '014:gds:convivio',
+    ]);
+    expect(gdsSuggestions[1]).toMatchObject({ fell: true, lastDate: '10/10/2026' });
+
+    await request(app)
+      .patch('/api/v1/patients/014/suggestions/014%3Agds%3Aprazer')
+      .set(auth(prof1Token))
+      .send({ status: 'ok' });
+    const routines = await request(app).get('/api/v1/routines').set(auth(prof1Token));
+    expect(routines.body.items[0].activities).toEqual([
+      expect.objectContaining({ key: '014:gds:prazer', instrument: 'gds' }),
+    ]);
+    const patients = await request(app).get('/api/v1/patients').set(auth(prof1Token));
+    expect(patients.body.items[0]).toMatchObject({
+      lastEvaluationDate: '10/10/2026',
+      lastResult: { instrument: 'gds', instrumentName: 'GDS-15', total: 11, max: 15 },
+      trend: { tone: 'bad' },
+    });
+    const dashboard = await request(app).get('/api/v1/dashboard/summary').set(auth(prof1Token));
+    expect(dashboard.body.todo).toContainEqual(
+      expect.objectContaining({
+        kind: 'drop',
+        text: 'Queda desde a avaliação anterior em: Evocação, Atenção e cálculo, Orientação, GDS-15',
+      }),
+    );
   });
 
   it('RN-EVO-05..07/RN-EVO-06: suggestion state, custom text, routine, dashboard and admin read models', async () => {
@@ -322,30 +416,8 @@ describe('API REST v1 (integração MongoDB) ', () => {
     expect((await request(app).get('/api/v1/leads').set(auth(adminToken))).body.items).toEqual([]);
   });
 
-  it('RN-PAT-07/RN-FIC-10: delete cascades aggregate data and pending is readable only when present', async () => {
+  it('RN-PAT-07: delete cascades aggregate data', async () => {
     await addSeedPatients();
-    const missing = await request(app)
-      .get('/api/v1/patients/014/fichas/pending')
-      .set(auth(prof1Token));
-    expect(missing.status).toBe(404);
-    await PatientModel.updateOne(
-      { code: '014' },
-      {
-        $set: {
-          pending: {
-            date: '17/10/2026',
-            scores: { ori: 8, reg: 3, ate: 2, evo: 1, lin: 8 },
-            writtenTotal: 22,
-            flag: 'ate',
-            observations: 'Obs',
-          },
-        },
-      },
-    );
-    expect(
-      (await request(app).get('/api/v1/patients/014/fichas/pending').set(auth(prof1Token))).body
-        .pending.flag,
-    ).toBe('ate');
     expect((await request(app).delete('/api/v1/patients/014').set(auth(prof1Token))).status).toBe(
       204,
     );
@@ -417,7 +489,6 @@ describe('API REST v1 (integração MongoDB) ', () => {
     expect(summary.body.kpis).toMatchObject({
       patients: 3,
       professionals: 2,
-      pendingFichas: 0,
       recentDrops: 2,
       routineActivities: 0,
     });

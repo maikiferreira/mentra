@@ -20,26 +20,26 @@ interface WelcomeCredentials {
 interface UIState {
   session: { token: string; user: AuthUser } | null;
   welcome: WelcomeCredentials | null;
-  justConfirmed: Record<string, string>;
+  justRegistered: Record<string, string>;
   setSession: (session: { token: string; user: AuthUser }) => void;
   logout: () => void;
   setWelcome: (welcome: WelcomeCredentials | null) => void;
-  markConfirmed: (patientId: string, date: string) => void;
+  markRegistered: (patientId: string, date: string) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
   session: savedSession,
   welcome: null,
-  justConfirmed: {},
+  justRegistered: {},
   setSession: (session) => {
     localStorage.setItem('mente-ativa-session', JSON.stringify(session));
     set({ session });
   },
   logout: () => {
     localStorage.removeItem('mente-ativa-session');
-    set({ session: null, welcome: null, justConfirmed: {} });
+    set({ session: null, welcome: null, justRegistered: {} });
   },
   setWelcome: (welcome) => set({ welcome }),
-  markConfirmed: (patientId, date) =>
-    set((state) => ({ justConfirmed: { ...state.justConfirmed, [patientId]: date } })),
+  markRegistered: (patientId, date) =>
+    set((state) => ({ justRegistered: { ...state.justRegistered, [patientId]: date } })),
 }));

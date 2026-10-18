@@ -1,5 +1,4 @@
 import mongoose, { Schema, type InferSchemaType } from 'mongoose';
-import type { MeemScores, MeemDomainKey } from '@mente-ativa/shared';
 
 const userSchema = new Schema(
   {
@@ -12,32 +11,14 @@ const userSchema = new Schema(
   { timestamps: true },
 );
 
-const scoresSchema = new Schema(
-  {
-    ori: { type: Number, required: true },
-    reg: { type: Number, required: true },
-    ate: { type: Number, required: true },
-    evo: { type: Number, required: true },
-    lin: { type: Number, required: true },
-  },
-  { _id: false },
-);
 const evaluationSchema = new Schema(
   {
     date: { type: String, required: true },
-    scores: { type: scoresSchema, required: true },
+    // Avaliações anteriores aos múltiplos testes não têm o campo: são MEEM.
+    instrument: { type: String, default: 'meem' },
+    // Respostas por campo do teste (ver INSTRUMENTS em @mente-ativa/shared).
+    scores: { type: Schema.Types.Mixed, required: true },
     notes: { type: String, default: null },
-    createdAt: { type: Date, required: true, default: Date.now },
-  },
-  { _id: false },
-);
-const pendingSchema = new Schema(
-  {
-    date: { type: String, required: true },
-    scores: { type: scoresSchema, required: true },
-    writtenTotal: { type: Number, required: true },
-    flag: { type: String, enum: ['ori', 'reg', 'ate', 'evo', 'lin', null], default: null },
-    observations: { type: String, required: true },
     createdAt: { type: Date, required: true, default: Date.now },
   },
   { _id: false },
@@ -70,9 +51,7 @@ const patientSchema = new Schema(
     group: { type: String, required: true },
     objective: { type: String, default: '' },
     responsibleUsername: { type: String, required: true, index: true },
-    generationCursor: { type: Number, required: true, default: 0 },
     evaluations: { type: [evaluationSchema], default: [] },
-    pending: { type: pendingSchema, default: null },
     suggestionStates: { type: [suggestionStateSchema], default: [] },
   },
   { timestamps: true, versionKey: '__v' },
@@ -103,5 +82,3 @@ export const PatientModel =
 export const LeadModel =
   (mongoose.models.Lead as mongoose.Model<LeadRecord> | undefined) ??
   mongoose.model<LeadRecord>('Lead', leadSchema);
-export type StoredScores = MeemScores;
-export type StoredDomainKey = MeemDomainKey;

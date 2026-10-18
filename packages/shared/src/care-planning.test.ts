@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   calculateDomainFlags,
   calculateTrend,
+  evaluationDateKey,
   firstNameUsername,
-  generateMagicOzFicha,
   generateSuggestions,
   nextPatientCode,
   totalScore,
@@ -11,7 +11,6 @@ import {
   uniqueUsername,
   type Evaluation,
   type MeemScores,
-  type PatientForPlanning,
 } from './care-planning';
 
 const seed014: Evaluation[] = [
@@ -29,10 +28,6 @@ const seed009: Evaluation[] = [
   { date: '06/2026', scores: { ori: 10, reg: 3, ate: 4, evo: 3, lin: 8 } },
   { date: '09/2026', scores: { ori: 10, reg: 3, ate: 4, evo: 2, lin: 8 } },
 ];
-
-function patient(id: string, evaluations: Evaluation[], generationCursor = 0): PatientForPlanning {
-  return { id, evaluations, generationCursor };
-}
 
 function scores(ori: number, reg: number, ate: number, evo: number, lin: number): MeemScores {
   return { ori, reg, ate, evo, lin };
@@ -99,34 +94,7 @@ describe('domínio puro do planejamento e utilitários', () => {
     ]);
   });
 
-  it('RN-FIC-03: gera a primeira ficha do paciente sem avaliações sem avançar cursor', () => {
-    const newPatient = patient('022', [], 0);
-    const ficha = generateMagicOzFicha(newPatient, '17/10/2026');
-
-    expect(ficha).toEqual({
-      date: '17/10/2026',
-      scores: scores(9, 3, 4, 2, 8),
-      writtenTotal: 26,
-      flag: 'ate',
-      observations: 'Primeira avaliação. Colaborou bem durante a sessão.',
-    });
-    expect(newPatient.generationCursor).toBe(0);
-  });
-
-  it('RN-FIC-03: aplica roteiro 014 no primeiro envio e avança cursor', () => {
-    const existingPatient = patient('014', seed014, 0);
-    const ficha = generateMagicOzFicha(existingPatient, '17/10/2026');
-
-    expect(ficha.scores).toEqual(scores(8, 3, 2, 1, 8));
-    expect(ficha.flag).toBe('ate');
-    expect(ficha.writtenTotal).toBe(22);
-    expect(ficha.observations).toBe(
-      'Relata cansaço e esquecimento de recados. Participou do jogo de pares.',
-    );
-    expect(existingPatient.generationCursor).toBe(1);
-  });
-
-  it('RN-EVO-01 e RN-EVO-03: paciente 014 após confirmar ficha tem queda de 1 e sugestões esperadas', () => {
+  it('RN-EVO-01 e RN-EVO-03: paciente 014 após registrar ficha tem queda de 1 e sugestões esperadas', () => {
     const evaluations = [...seed014, { date: '17/10/2026', scores: scores(8, 3, 2, 1, 8) }];
     expect(calculateTrend(evaluations)).toMatchObject({ kind: 'down', label: '▼ caiu 1' });
     expect(
@@ -138,17 +106,11 @@ describe('domínio puro do planejamento e utilitários', () => {
     });
   });
 
-  it('RN-FIC-03: segundo envio de paciente novo aplica o primeiro passo do roteiro padrão', () => {
-    const firstEvaluation: Evaluation = {
-      date: '17/10/2026',
-      scores: scores(9, 3, 4, 2, 8),
-    };
-    const newPatient = patient('022', [firstEvaluation], 0);
-    const ficha = generateMagicOzFicha(newPatient, '18/10/2026');
-
-    expect(ficha.scores).toEqual(scores(9, 3, 3, 2, 8));
-    expect(ficha.flag).toBe('ate');
-    expect(ficha.writtenTotal).toBe(25);
+  it('RN-FIC-01: ordena datas completas e datas só com mês/ano', () => {
+    expect(evaluationDateKey('17/10/2026')).toBe(20261017);
+    expect(evaluationDateKey('17/10/2026 #2')).toBe(20261017);
+    expect(evaluationDateKey('09/2026')).toBe(20260901);
+    expect(evaluationDateKey('data inválida')).toBeNull();
   });
 
   it('RN-FIC-01: garante data única com sufixos crescentes', () => {
@@ -181,7 +143,7 @@ describe('domínio puro do planejamento e utilitários', () => {
     expect(flags.map((flag) => flag.domain.key)).toEqual(['reg', 'evo', 'ate']);
   });
 
-  it('RN-FIC-03: total calculado é a soma dos domínios', () => {
+  it('RN-FIC-02: total calculado é a soma dos domínios', () => {
     expect(totalScore(scores(9, 3, 4, 2, 8))).toBe(26);
   });
 });

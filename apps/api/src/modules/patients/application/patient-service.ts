@@ -2,15 +2,15 @@ import {
   EMERGENCY_RELATIONSHIPS,
   LIMITATIONS,
   PATIENT_GROUPS,
-  calculateTrend,
+  instrumentOf,
+  instrumentTrend,
   nextPatientCode,
-  totalScore,
-  type MeemScores,
 } from '@mente-ativa/shared';
 import { z } from 'zod';
 import { notFound, validationError } from '../../shared/kernel/errors.js';
 import { PatientModel, UserModel } from '../../shared/infra/models.js';
 import { canAccessPatient } from '../domain/access-policy.js';
+import { latestResults } from '../../evaluations/domain/patient-evaluations.js';
 import type { AuthUser } from '../../shared/presentation/http.js';
 
 const patientBodySchema = z.object({
@@ -138,8 +138,6 @@ function validatePatient(input: unknown): PatientInput {
   };
 }
 
-const total = (scores: MeemScores) => totalScore(scores);
-
 export class PatientService {
   async list(user: AuthUser) {
     const query = user.role === 'admin' ? {} : { responsibleUsername: user.username };
@@ -153,7 +151,10 @@ export class PatientService {
     return {
       items: patients.map((patient) => {
         const last = patient.evaluations.at(-1);
-        const trend = calculateTrend(patient.evaluations);
+        // A lista mostra o teste aplicado por último.
+        const current = last
+          ? latestResults(patient).find((entry) => entry.definition.key === instrumentOf(last))
+          : undefined;
         return {
           id: patient.code,
           initials: patient.initials,
@@ -167,9 +168,16 @@ export class PatientService {
               }
             : {}),
           lastEvaluationDate: last?.date ?? null,
-          lastTotal: last ? total(last.scores as MeemScores) : null,
-          trend,
-          hasPending: Boolean(patient.pending),
+          lastResult: current
+            ? {
+                instrument: current.definition.key,
+                instrumentName: current.definition.shortName,
+                total: current.result.total,
+                max: current.result.max,
+                level: current.result.level,
+              }
+            : null,
+          trend: current?.trend ?? instrumentTrend([], true),
         };
       }),
     };
@@ -197,7 +205,6 @@ export class PatientService {
       objective: patient.objective,
       responsibleUsername: patient.responsibleUsername,
       responsibleName: responsible?.name ?? patient.responsibleUsername,
-      hasPending: Boolean(patient.pending),
       evaluationCount: patient.evaluations.length,
     };
   }
@@ -218,9 +225,7 @@ export class PatientService {
           ...fields,
           code,
           responsibleUsername: user.username,
-          generationCursor: 0,
           evaluations: [],
-          pending: null,
           suggestionStates: [],
         });
         return this.get(user, code);

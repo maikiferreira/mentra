@@ -1,4 +1,9 @@
-import type { MeemDomainKey, MeemScores } from '@mente-ativa/shared';
+import type {
+  InstrumentCategory,
+  InstrumentKey,
+  InstrumentResult,
+  TrendResult,
+} from '@mente-ativa/shared';
 
 const API_BASE =
   (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL ??
@@ -21,9 +26,14 @@ export interface PatientSummary {
   responsibleUsername: string;
   responsibleName?: string;
   lastEvaluationDate: string | null;
-  lastTotal: number | null;
-  trend: { kind: string; label: string; delta: number | null };
-  hasPending: boolean;
+  lastResult: {
+    instrument: InstrumentKey;
+    instrumentName: string;
+    total: number;
+    max: number | null;
+    level: InstrumentResult['level'];
+  } | null;
+  trend: TrendResult;
 }
 export interface Patient {
   id: string;
@@ -41,30 +51,21 @@ export interface Patient {
   objective: string;
   responsibleUsername: string;
   responsibleName: string;
-  hasPending: boolean;
   evaluationCount: number;
 }
 export interface Evaluation {
   date: string;
-  instrument: string;
+  instrument: InstrumentKey;
+  instrumentName: string;
   total: number;
+  max: number | null;
+  level: InstrumentResult['level'];
+  interpretation: string;
   status: string;
-}
-export interface PendingFicha {
-  date: string;
-  scores: MeemScores;
-  writtenTotal: number;
-  flag: MeemDomainKey | null;
-  observations: string;
-  sheetLines: Array<{
-    id: string;
-    title?: string;
-    left?: string;
-    right?: string;
-  }>;
 }
 export interface Suggestion {
   key: string;
+  instrument: InstrumentKey;
   title: string;
   defaultText: string;
   duration: string;
@@ -76,33 +77,51 @@ export interface Suggestion {
   interests: string;
   state: { status: 'open' | 'ok' | 'no'; customText: string | null };
 }
-export interface Evolution {
-  hasPending: boolean;
-  pendingDate: string | null;
-  suggestions: Suggestion[];
-  routine: Array<{ key: string; title: string; text: string; duration: string; frequency: string }>;
-  series?: Array<{ date: string; total: number }>;
+export interface RoutineItem {
+  key: string;
+  instrument: InstrumentKey;
+  title: string;
+  text: string;
+  duration: string;
+  frequency: string;
+}
+export interface InstrumentEvolution {
+  key: InstrumentKey;
+  name: string;
+  shortName: string;
+  category: InstrumentCategory;
+  max: number | null;
+  higherIsBetter: boolean;
+  totalLabel: string;
+  series: Array<{ date: string; total: number }>;
+  latest: InstrumentResult & { date: string };
+  trend: TrendResult;
   delta?: {
     previousDate: string;
     lastDate: string;
     rows: Array<{
-      domain: MeemDomainKey;
+      key: string;
       name: string;
       previous: number;
       last: number;
-      max: number;
+      max: number | null;
       kind: 'up' | 'down' | 'same';
+      tone: TrendResult['tone'];
       label: string;
     }>;
   };
-  trend: { kind: string; label: string; delta: number | null };
+}
+export interface Evolution {
+  instruments: InstrumentEvolution[];
+  latestInstrument: InstrumentKey | null;
+  suggestions: Suggestion[];
+  routine: RoutineItem[];
 }
 export interface Dashboard {
   greetingName: string;
   kpis: {
     patients: number;
     professionals?: number;
-    pendingFichas: number;
     recentDrops: number;
     routineActivities: number;
   };
