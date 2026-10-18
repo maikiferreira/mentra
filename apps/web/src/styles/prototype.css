@@ -135,14 +135,6 @@ button {
 .brand .bn span {
   color: var(--accent);
 }
-.flag {
-  font-size: 0.8rem;
-  font-weight: 600;
-  background: var(--warn-soft);
-  color: var(--warn);
-  padding: 4px 10px;
-  border-radius: 999px;
-}
 .crumbs {
   display: flex;
   align-items: center;
@@ -299,10 +291,6 @@ button {
   border-radius: 999px;
   padding: 1px 8px;
 }
-.side .flag {
-  margin-top: auto;
-  align-self: flex-start;
-}
 .content {
   padding-block: 28px 0;
   min-width: 0;
@@ -380,9 +368,6 @@ button {
   .navb .cnt {
     margin-left: 4px;
   }
-  .side .flag {
-    display: none;
-  }
   .content {
     padding-block: 20px 0;
   }
@@ -430,9 +415,6 @@ button {
 }
 .usr b {
   display: block;
-}
-.side .flag {
-  margin-top: 0;
 }
 @media (max-width: 820px) {
   .usr {
@@ -512,19 +494,6 @@ button {
   margin: 0;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-}
-.guide {
-  border: 1px dashed var(--line);
-  border-radius: 14px;
-  padding: 14px 16px;
-  background: var(--surface);
-  margin-bottom: 20px;
-}
-.guide ol {
-  margin: 8px 0 0;
-  padding-left: 1.2rem;
-  display: grid;
-  gap: 2px;
 }
 .plist {
   display: flex;

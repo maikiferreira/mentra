@@ -242,10 +242,6 @@ function AppShell({ children }: { children: ReactNode }) {
             Sair
           </button>
         </div>
-        {((import.meta as ImportMeta & { env?: { VITE_SHOW_DEMO_FLAG?: string } }).env
-          ?.VITE_SHOW_DEMO_FLAG ?? 'true') === 'true' && (
-          <span className="flag">Protótipo · dados fictícios</span>
-        )}
       </aside>
       <div className="content">
         <main>{children}</main>
@@ -446,12 +442,6 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' | 'trial' }) {
                 Quero testar
               </Link>
             </div>
-            {((import.meta as ImportMeta & { env?: { VITE_SHOW_DEMO_HINT?: string } }).env
-              ?.VITE_SHOW_DEMO_HINT ?? 'true') === 'true' && (
-              <div className="note">
-                Acesso de demonstração: usuário <b>admin</b>, senha <b>admin</b>.
-              </div>
-            )}
           </>
         )}
       </div>
@@ -481,10 +471,7 @@ function PatientList() {
                 Novo paciente
               </Link>
             </div>
-            <p className="muted">
-              Identificados só por código e iniciais. O protótipo usa fichas e pontuações de
-              exemplo.
-            </p>
+            <p className="muted">Identificados só por código e iniciais.</p>
           </div>
           <div className="plist">
             {items.length ? (
@@ -694,8 +681,8 @@ function PatientFormPage({ editing = false }: { editing?: boolean }) {
       <div className="head">
         <h1>{editing ? `Editar dados do paciente ${id}` : 'Novo paciente'}</h1>
         <p className="muted">
-          Identifique o paciente só por iniciais. No protótipo, use dados fictícios. No produto,
-          endereço e telefone exigem o consentimento do paciente (LGPD).
+          Identifique o paciente só por iniciais. Endereço e telefone exigem o consentimento do
+          paciente (LGPD).
         </p>
       </div>
       <div className="panel">
@@ -1816,15 +1803,6 @@ function HomePage() {
               </p>
             </div>
           )}
-        </div>
-        <div className="guide" style={{ marginBottom: 0 }}>
-          <b>Roteiro do demo (2 minutos)</b>
-          <ol>
-            <li>Abra um paciente e clique em Registrar nova ficha.</li>
-            <li>Escolha a área e o teste (ex.: Humor › GDS-15) e preencha a ficha.</li>
-            <li>Salve a ficha e veja a evolução se atualizar.</li>
-            <li>Aceite, edite ou recuse as sugestões e monte a rotina.</li>
-          </ol>
         </div>
       </div>
     </>

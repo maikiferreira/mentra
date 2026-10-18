@@ -203,7 +203,7 @@ describe('UI fase 5 — regras RN', () => {
     mount('/pacientes/novo');
     expect(
       await screen.findByText(
-        'Identifique o paciente só por iniciais. No protótipo, use dados fictícios. No produto, endereço e telefone exigem o consentimento do paciente (LGPD).',
+        'Identifique o paciente só por iniciais. Endereço e telefone exigem o consentimento do paciente (LGPD).',
       ),
     ).toBeInTheDocument();
     await actor.click(screen.getByRole('button', { name: 'Salvar' }));
