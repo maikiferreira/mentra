@@ -669,4 +669,17 @@ describe('API REST v1 (integração MongoDB) ', () => {
       .set(auth(prof1Token));
     expect(detail.body.observations).toBe('Obs');
   });
+
+  it('demo reset responde 404 em produção, mesmo para admin, sem apagar dados', async () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      expect((await request(app).post('/api/v1/demo/reset')).status).toBe(404);
+      const reset = await request(app).post('/api/v1/demo/reset').set(auth(adminToken));
+      expect(reset.status).toBe(404);
+      expect(await UserModel.countDocuments({ username: 'admin' })).toBe(1);
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
+  });
 });

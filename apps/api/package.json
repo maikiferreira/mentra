@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "tsx watch --conditions=source src/server.ts",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/server.js",
+    "start": "tsx --conditions=source src/server.ts",
+    "start:dist": "node dist/server.js",
     "seed": "tsx --conditions=source src/seed.ts",
+    "seed:prod": "node dist/seed.js",
+    "create-admin": "tsx --conditions=source src/create-admin.ts",
     "test": "vitest run --config ../../vitest.config.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "seed:prod": "node dist/seed.js"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@mente-ativa/shared": "*",
@@ -23,6 +25,7 @@
     "mongoose": "^8.19.3",
     "pino": "^9.7.0",
     "pino-http": "^10.5.0",
+    "tsx": "^4.20.6",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -30,7 +33,6 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/supertest": "^6.0.3",
     "mongodb-memory-server": "^10.2.3",
-    "supertest": "^7.1.4",
-    "tsx": "^4.20.6"
+    "supertest": "^7.1.4"
   }
 }

@@ -52,8 +52,7 @@ Requisitos: **Node.js 20+** e **MongoDB 7** rodando em `localhost:27017` (ou use
 npm ci
 cp .env.example .env                       # ajuste se necessário
 npm run seed --workspace @mente-ativa/api  # usuários e pacientes de exemplo
-npm run dev --workspace @mente-ativa/api   # API em http://localhost:3000
-npm run dev --workspace @mente-ativa/web   # front em http://localhost:5173
+npm run dev                                # API (localhost:3000) e front (localhost:5173) juntos
 ```
 
 Usuários de exemplo: `admin` / `admin`, `prof1` / `prof1` e `prof2` / `prof2`. Os pacientes de
@@ -96,37 +95,58 @@ produção e os testes E2E a cada push na `main` e em cada pull request.
 
 ## Produção
 
+Em produção (`NODE_ENV=production`) a API exige `JWT_SECRET` com 32 caracteres ou mais, desativa a
+restauração de dados de exemplo (`/demo/reset`) e bloqueia o seed de demonstração. Crie o primeiro
+administrador com:
+
 ```bash
-JWT_SECRET='um-texto-longo-e-aleatorio' docker compose -f docker-compose.prod.yml up -d --build
+ADMIN_PASSWORD='senha-com-12-ou-mais' npm run create-admin -w @mente-ativa/api -- <usuario> "<Nome>"
+```
+
+### Render (deploy atual)
+
+O [render.yaml](render.yaml) publica a `main` automaticamente:
+
+- **API:** roda direto do TypeScript (`npm start`, com `tsx`).
+- **Front:** é publicado como site estático.
+
+Configure `MONGO_URI` e `JWT_SECRET` no painel do Render.
+
+### Docker
+
+```bash
+JWT_SECRET="$(node -e "console.log(require('crypto').randomBytes(48).toString('hex'))")" \
+  docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 - **API:** roda o JavaScript compilado, sem dependências de desenvolvimento e sem root.
 - **Front:** é servido pelo nginx, que também repassa `/api` para a API (mesmo endereço, sem CORS),
   em `http://localhost:8080` (porta configurável por `WEB_PORT`).
-- **Dados de exemplo:** não são criados em produção. Para criá-los, rode
-  `npm run seed:prod --workspace @mente-ativa/api` dentro do contêiner da API.
 
-Sem Docker, o build de produção é:
+Sem Docker, o build compilado é:
 
 ```bash
 npm run build --workspace @mente-ativa/shared
-npm run build --workspace @mente-ativa/api   # depois: node apps/api/dist/server.js
+npm run build --workspace @mente-ativa/api   # depois: npm run start:dist -w @mente-ativa/api
 npm run build --workspace @mente-ativa/web   # arquivos estáticos em apps/web/dist
 ```
 
-O pacote `@mente-ativa/shared` é lido direto do TypeScript em desenvolvimento e nos testes (condição
-de importação `source`) e do JavaScript compilado (`packages/shared/dist`) em produção.
+O pacote `@mente-ativa/shared` é lido direto do TypeScript pela condição de importação `source`. Isso
+vale em desenvolvimento, nos testes e no `npm start` usado pelo Render. Já o `start:dist` e o Docker
+usam o JavaScript compilado (`packages/shared/dist`).
 
 ### Variáveis de ambiente
 
-| Variável       | Onde | Descrição                                                               |
-| -------------- | ---- | ----------------------------------------------------------------------- |
-| `MONGO_URI`    | API  | Conexão com o MongoDB (padrão `mongodb://127.0.0.1:27017/mente-ativa`)  |
-| `JWT_SECRET`   | API  | Segredo dos tokens de sessão. **Obrigatório em produção**               |
-| `API_PORT`     | API  | Porta da API (padrão `3000`)                                            |
-| `WEB_ORIGINS`  | API  | Origens liberadas no CORS, separadas por vírgula                        |
-| `TRUST_PROXY`  | API  | Proxies na frente da API (`1` atrás do nginx); vazio em desenvolvimento |
-| `VITE_API_URL` | Web  | Endereço da API usado pelo front (no build de produção: `/api/v1`)      |
+| Variável         | Onde | Descrição                                                               |
+| ---------------- | ---- | ----------------------------------------------------------------------- |
+| `MONGO_URI`      | API  | Conexão com o MongoDB (padrão `mongodb://127.0.0.1:27017/mente-ativa`)  |
+| `JWT_SECRET`     | API  | Segredo dos tokens. **Obrigatório em produção, com 32+ caracteres**     |
+| `PORT`           | API  | Porta HTTP (o Render define); `API_PORT` é a alternativa local (`3000`) |
+| `NODE_ENV`       | API  | `production` ativa as proteções descritas acima                         |
+| `LOG_LEVEL`      | API  | Nível de log do pino (`info` por padrão)                                |
+| `WEB_ORIGINS`    | API  | Origens liberadas no CORS, separadas por vírgula                        |
+| `ADMIN_PASSWORD` | API  | Usada só pelo `create-admin` (mínimo 12 caracteres)                     |
+| `VITE_API_URL`   | Web  | Endereço da API usado pelo front (no Docker de produção: `/api/v1`)     |
 
 ## Documentação
 
@@ -137,8 +157,8 @@ de importação `source`) e do JavaScript compilado (`packages/shared/dist`) em 
 
 - **Dados sensíveis:** o sistema guarda dados de saúde, que a LGPD trata como sensíveis. Revise
   consentimento, registro de acessos, retenção e exclusão de dados, além da hospedagem.
-- **Usuários e senhas:** troque os usuários e senhas de exemplo, defina um `JWT_SECRET` forte e
-  desative a restauração de dados de exemplo (`/demo/reset`).
+- **Usuários e senhas:** não use os usuários de exemplo em produção. Crie os acessos com o
+  `create-admin`.
 - **Licença dos testes:** o **MoCA** exige licença e certificação para uso; confirme os direitos de
   uso de cada teste antes de oferecer o produto comercialmente.
 - **Revisão profissional:** os textos das sugestões de atividades devem ser revisados por um

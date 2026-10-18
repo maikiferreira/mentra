@@ -34,10 +34,8 @@ const authRateLimit = rateLimit({
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
-  // Atrás de um proxy (nginx em produção), usa o IP real do cliente no limite de tentativas.
-  const trustProxy = process.env.TRUST_PROXY;
-  if (trustProxy)
-    app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
+  // Render (e outros PaaS) ficam atrás de um proxy reverso; necessário para o rate limit por IP.
+  app.set('trust proxy', 1);
   app.use(helmet());
   app.use(pinoHttp({ logger }));
   app.use((request, response, next) => {

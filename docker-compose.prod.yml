@@ -21,8 +21,6 @@ services:
     environment:
       NODE_ENV: production
       API_PORT: 3000
-      # A API recebe as requisições pelo nginx do serviço web.
-      TRUST_PROXY: 1
       MONGO_URI: mongodb://mongo:27017/mente-ativa
       JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET com um texto longo e aleatório}
       WEB_ORIGINS: ${WEB_ORIGINS:-http://localhost:8080}

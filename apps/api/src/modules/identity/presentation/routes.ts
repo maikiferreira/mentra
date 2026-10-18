@@ -27,7 +27,20 @@ adminRouter.get('/users', requireAuth, requireAdmin, async (_request, response) 
 adminRouter.get('/leads', requireAuth, requireAdmin, async (_request, response) =>
   response.json(await adminQueries.leads()),
 );
-adminRouter.post('/demo/reset', requireAuth, requireAdmin, async (_request, response) => {
-  await resetDemoDatabase();
-  response.status(204).end();
-});
+adminRouter.post(
+  '/demo/reset',
+  (_request, response, next) => {
+    if (process.env.NODE_ENV === 'production') {
+      return response
+        .status(404)
+        .json({ error: { code: 'NOT_FOUND', message: 'Recurso não encontrado.' } });
+    }
+    return next();
+  },
+  requireAuth,
+  requireAdmin,
+  async (_request, response) => {
+    await resetDemoDatabase();
+    response.status(204).end();
+  },
+);
